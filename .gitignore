@@ -1,0 +1,5 @@
+fly.toml
+Dockerfile
+.env
+__pycache__/
+*.pyc
