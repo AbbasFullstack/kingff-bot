@@ -230,7 +230,7 @@ async def agent_loop(goal, update):
 # COMMANDS
 async def start(u, c):
     await u.message.reply_text(
-        f"🤖 **Abbas AI - Day 7 Voice Agent FINAL ✅**\n\n"
+        f"🤖 **Abbas AI - Day 7.1 Voice Agent FINAL FIXED ✅**\n\n"
         f"**Repo:** {GITHUB_REPO}\n**PAT:** {'✅' if GITHUB_PAT else '❌'}\n**Vercel:** {VERCEL_URL}\n"
         f"**Hosting:** Wispbyte 🌐\n**Python:** {platform.python_version()}\n**TTS:** {'✅' if HAS_TTS else '❌'}\n\n"
         f"**Day 3:** /id /battery /ls /run /ai\n**Day 4:** /deploy /backup /setremote /gitpush /uptime\n"
@@ -355,25 +355,46 @@ async def help_command(u, c):
     )
 
 async def voice_command(u, c):
+    # If user wrote /voice <text> - treat as AI query + voice reply - FIX for Day 7.1
+    text = " ".join(c.args) if c.args else ""
+    if text:
+        await u.message.reply_chat_action("typing")
+        await u.message.reply_text(f"🎤 Voice command: {text}\n🧠 Soch raha hun...")
+        ans = await call_ai(text)
+        await u.message.reply_text(ans)
+        if HAS_TTS:
+            vf = text_to_voice(ans)
+            if vf and os.path.exists(vf):
+                try:
+                    await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply - Day 7.1")
+                    try:
+                        os.remove(vf)
+                    except:
+                        pass
+                except Exception as e:
+                    await u.message.reply_text(f"TTS send error: {e}")
+        return
+
+    # No text - show guide
+    tts_status = "✅ gTTS installed" if HAS_TTS else "❌ pip install gTTS"
     await u.message.reply_text(
-        "🎤 **Day 7 Voice Agent - Guide**\n\n"
-        "**Kaise use kare:**\n"
-        "1. 🎙️ Telegram me Voice Message button dabao aur bolo:\n"
-        "   'README me Day 7 section add kar'\n"
-        "   'bot.py me /hello command add kar'\n"
-        "   'Ek file test.txt bana'\n\n"
-        "2. 🤖 Agent voice ko text me convert karega (Whisper)\n"
-        "3. 🧠 Phir us goal pe Agent mode chalega\n"
-        "4. 🔊 Jawab text + voice dono me dega!\n\n"
-        "**Commands:**\n"
-        "/voice - Ye guide\n"
-        "Voice msg: 'Meri journey bata' -> /kingff jaisa jawab\n"
-        "Voice msg: 'Battery dikha' -> /battery\n"
-        "Voice msg: 'Agent ek file bana' -> /agent task\n\n"
-        "**Requirements:**\n"
-        f"TTS: {'✅ gTTS installed' if HAS_TTS else '❌ pip install gTTS'}\n"
-        "STT: OpenRouter Whisper (AI_KEY se)\n\n"
-        "Wispbyte pe Voice Agent LIVE! 🎤🚀",
+        f"🎤 **Day 7 Voice Agent - Guide**\n\n"
+        f"**Kaise use kare:**\n"
+        f"1. 🎙️ Telegram me Voice Message button dabao aur bolo:\n"
+        f"   'README me Day 7 section add kar'\n"
+        f"   'Meri journey bata'\n"
+        f"   'Battery dikha'\n\n"
+        f"2. 🤖 Agent voice ko text me convert karega (Whisper)\n"
+        f"3. 🧠 Phir us goal pe Agent mode chalega\n"
+        f"4. 🔊 Jawab text + voice dono me dega!\n\n"
+        f"**Text se bhi:**\n"
+        f"/voice Bhai yaar aik kaam karoo\n"
+        f"/voice README me Day 7 add kar\n"
+        f"Ye ab text + voice dono dega! FIXED!\n\n"
+        f"**Requirements:**\n"
+        f"TTS: {tts_status}\n"
+        f"STT: OpenRouter Whisper (AI_KEY se)\n\n"
+        f"Wispbyte pe Voice Agent LIVE! 🎤🚀",
         parse_mode='Markdown'
     )
 
@@ -400,26 +421,28 @@ async def handle_voice(u, c):
             pass
 
         if not transcribed or len(transcribed.strip()) < 2:
-            # Fallback - if transcription fails, use AI to guess or ask
-            transcribed = ""
+            # Fallback - transcription fail but still reply with AI + voice
             await u.message.reply_text(
-                "⚠️ Voice transcribe nahi ho paya (Whisper API key issue).\n\n"
-                "Lekin Day 7 Voice Agent ready hai!\n\n"
-                "Workaround:\n"
-                "1. Voice ke saath text bhi likh do\n"
-                "2. Ya /agent command use kar\n"
-                "3. Ya OPENAI_API_KEY env me add kar (Whisper ke liye)\n\n"
-                "Voice file receive ho gayi hai - TTS reply test karta hun!"
+                "⚠️ Voice transcribe nahi ho paya (Whisper API need OPENAI_API_KEY).\n\n"
+                "Lekin maine voice receive kar li hai! ✅\n"
+                "Day 7.1 Fix: Ab /voice <text> bhi kaam karega!\n\n"
+                "Try karo:\n"
+                "/voice Bhai yaar aik kaam karoo\n"
+                "Ya dobara voice bhejo thoda slow aur clear bol ke!\n\n"
+                "Demo voice reply bhej raha hun!"
             )
-            # Still do TTS demo
             if HAS_TTS:
-                demo_text = "Voice agent Day 7 live hai, bro! Bol ke command de, main sun raha hun!"
+                demo_text = "Voice agent Day Seven live hai bro! Aapka voice message receive ho gaya hai! Ab aap text me /voice likh ke bhi baat kar sakte ho! KingFF se Voice Agent tak ka safar!"
                 vf = text_to_voice(demo_text)
-                if vf:
+                if vf and os.path.exists(vf):
                     try:
-                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Demo Voice Reply")
-                    except:
-                        pass
+                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Day 7.1 Demo Voice Reply - Fallback")
+                        try:
+                            os.remove(vf)
+                        except:
+                            pass
+                    except Exception as e:
+                        await u.message.reply_text(f"Voice error: {e}")
             return
 
         await u.message.reply_text(f"🎤 **Transcribed:**\n`{transcribed}`\n\n🧠 Agent soch raha hai...", parse_mode='Markdown')
@@ -466,9 +489,9 @@ def main():
     # Voice handler - Day 7
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print(f"✅ Abbas AI ONLINE - Day 7 Voice Agent Final - Python {platform.python_version()}")
+    print(f"✅ Abbas AI ONLINE - Day 7.1 Voice Agent Fixed - Python {platform.python_version()}")
     print(f"🌐 Flask :{PORT} | Vercel {VERCEL_URL} | Wispbyte | TTS {HAS_TTS} | Voice Agent LIVE 🎤")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()    
+    main()
