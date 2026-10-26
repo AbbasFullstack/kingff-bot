@@ -1,34 +1,34 @@
 import os
 from dotenv import load_dotenv
 load_dotenv()
-import subprocess
-import platform
-import asyncio
-import httpx
-import zipfile
-import threading
-import json
-import re
+import subprocess, platform, asyncio, httpx, zipfile, threading, json, re
 from datetime import datetime
 from flask import Flask, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ================= ENV =================
-print("🔧 Abbas AI Day 1-6 Final Loading...")
+# Try voice libs - if not installed, fallback
+try:
+    from gtts import gTTS
+    HAS_TTS = True
+except:
+    HAS_TTS = False
+
+# ENV
+print("🔧 Abbas AI Day 7 Voice Agent Loading...")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AI_KEY = os.getenv("AI_KEY")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY", "") or AI_KEY  # Try AI_KEY as OpenAI key too
 GITHUB_PAT = os.getenv("GITHUB_PAT", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "AbbasFullstack/kingff-bot")
 VERCEL_URL = os.getenv("VERCEL_URL", "https://abbas-ai-dashboard.vercel.app")
 OWNER_ID = int(os.getenv("OWNER_ID", "8752799745"))
 PORT = int(os.getenv("PORT", "8080"))
 
-print(f"BOT_TOKEN: {bool(BOT_TOKEN)} | AI_KEY: {bool(AI_KEY)} | PAT: {bool(GITHUB_PAT)} | Repo: {GITHUB_REPO}")
+print(f"BOT_TOKEN: {bool(BOT_TOKEN)} | AI_KEY: {bool(AI_KEY)} | PAT: {bool(GITHUB_PAT)} | TTS: {HAS_TTS}")
 
-# ================= PROMPTS =================
 AGENT_SYSTEM = """You are Abbas Agent - Autonomous AI Agent by Abbas Hussain (16yo, Islamabad).
-Journey: Vie Faucet -> KingFF Faucet -> Full Stack -> Agent!
+Journey: Vie Faucet -> KingFF Faucet -> Full Stack -> Voice Agent!
 You THINK, PLAN, ACT using TOOLS.
 Tools:
 1. shell - {"tool":"shell","cmd":"ls -la"}
@@ -37,124 +37,68 @@ Tools:
 4. gitpush - {"tool":"gitpush","msg":"update"}
 5. deploy - {"tool":"deploy"}
 6. restart - {"tool":"restart"}
-RULES: Break goal into steps, use tools one by one, speak Roman Urdu/Hinglish, Wispbyte hosting."""
+RULES: Break goal into steps, use tools, speak Roman Urdu/Hinglish, Wispbyte."""
 
-SYSTEM_PROMPT = """You are Abbas Hussain AI - Personal AI by Abbas Hussain, 16yo Full Stack Engineer from Islamabad.
-Journey: Vie Faucet -> KingFF Faucet -> Full Stack -> Agent.
-Speak Roman Urdu/Hinglish - bro, yaar, zabardast.
-Running on Wispbyte + Vercel Live.
-Helpful, funny, coding expert."""
+SYSTEM_PROMPT = """You are Abbas Hussain AI - Personal AI by Abbas Hussain, 16yo Full Stack Engineer, Islamabad.
+Journey: Vie Faucet -> KingFF Faucet -> Full Stack -> Voice Agent Day 7.
+Speak Roman Urdu/Hinglish - bro, yaar, zabardast. Wispbyte + Vercel Live. Helpful, funny, coding expert."""
 
-MODELS = [
-    "recursive/flint-v1.0:free",
-    "nvidia/nemotron-3.5-super-vl:free",
-    "dots-studio/dots-3-note-preview:free"
-]
+MODELS = ["recursive/flint-v1.0:free","nvidia/nemotron-3.5-super-vl:free","dots-studio/dots-3-note-preview:free"]
 
-# ================= FLASK DASHBOARD - DAY 5 =================
+# FLASK - DAY 5 + DAY 7
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def dash():
     return f"""
-    <html><head><title>Abbas AI Day 6</title>
+    <html><head><title>Abbas AI Day 7 Voice</title>
     <style>body{{font-family:Arial;padding:30px;background:#0f172a;color:#fff}} 
     .card{{background:#1e293b;padding:20px;border-radius:12px;margin:15px 0}} 
-    a{{color:#38bdf8}} .badge{{background:#22c55e;padding:4px 10px;border-radius:20px;font-size:12px}}</style>
+    a{{color:#38bdf8}} .badge{{background:#22c55e;padding:4px 10px;border-radius:20px;font-size:12px}} .voice{{background:#7c3aed}}</style>
     </head><body>
-    <h1>🤖 Abbas Hussain AI - Day 1 to Day 6 Final</h1>
-    <div class="card"><span class="badge">LIVE</span> Wispbyte + Vercel<br>
-    <b>Repo:</b> {GITHUB_REPO}<br>
-    <b>Vercel:</b> <a href="{VERCEL_URL}">{VERCEL_URL}</a><br>
-    <b>Time:</b> {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}<br>
-    <b>Python:</b> {platform.python_version()}<br>
-    </div>
-    <div class="card">
-    <h3>Day 1-6 Journey</h3>
-    Day 0: Vie Faucet 💰<br>
-    Day 0.5: KingFF Faucet 🚀<br>
-    Day 1-2: GitHub + 24/7 Bot Hosting<br>
-    Day 3: Shell + AI Models<br>
-    Day 4: GitHub PAT<br>
-    Day 5: Vercel Live + Wispbyte Transfer<br>
-    Day 6: Agent Mode + /kingff<br>
-    Day 6.1: Bugfix + Auto Restart<br>
-    </div>
-    <div class="card">
-    <a href="/api/status">/api/status</a> | <a href="/api/files">/api/files</a> | <a href="/api/agent">/api/agent</a> | <a href="https://github.com/{GITHUB_REPO}">GitHub</a>
-    </div>
+    <h1>🎤 Abbas AI Day 7 Voice Agent</h1>
+    <div class="card"><span class="badge">LIVE</span> <span class="badge voice">VOICE AGENT</span> Wispbyte + Vercel<br>
+    <b>Repo:</b> {GITHUB_REPO}<br><b>Vercel:</b> <a href="{VERCEL_URL}">{VERCEL_URL}</a><br>
+    <b>Time:</b> {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}<br><b>Python:</b> {platform.python_version()}<br><b>TTS:</b> {HAS_TTS}</div>
+    <div class="card"><h3>Day 1-7 Journey</h3>
+    Day 0: Vie Faucet<br>Day 0.5: KingFF Faucet<br>Day 1-2: GitHub + Bot<br>Day 3: Shell + AI<br>Day 4: GitHub PAT<br>Day 5: Vercel + Wispbyte<br>Day 6: Agent Mode + /kingff<br>Day 7: Voice Agent + /voice + Voice Messages 🎤</div>
+    <div class="card"><a href="/api/status">/api/status</a> | <a href="/api/files">/api/files</a> | <a href="/api/agent">/api/agent</a> | <a href="/api/voice">/api/voice</a> | <a href="https://github.com/{GITHUB_REPO}">GitHub</a></div>
     </body></html>
     """
 
 @flask_app.route("/api/status")
 def api_status():
-    return jsonify({
-        "status": "online",
-        "day": "1-6 Final",
-        "version": "Day 6.1 Final",
-        "hosting": "Wispbyte",
-        "vercel": VERCEL_URL,
-        "repo": GITHUB_REPO,
-        "python": platform.python_version(),
-        "pat": bool(GITHUB_PAT),
-        "time": datetime.now().isoformat(),
-        "commands": ["/start","/id","/battery","/ls","/run","/ai","/deploy","/backup","/setremote","/gitpush","/uptime","/web","/agent","/kingff","/ping","/help"],
-        "journey": "Vie Faucet -> KingFF -> Full Stack -> Agent"
-    })
+    return jsonify({"status":"online","day":"1-7 Voice","version":"Day 7 Voice Agent","hosting":"Wispbyte","vercel":VERCEL_URL,"repo":GITHUB_REPO,"python":platform.python_version(),"pat":bool(GITHUB_PAT),"tts":HAS_TTS,"time":datetime.now().isoformat(),"commands":["/start","/id","/battery","/ls","/run","/ai","/deploy","/backup","/setremote","/gitpush","/uptime","/web","/agent","/kingff","/ping","/help","/voice"],"journey":"Vie Faucet -> KingFF -> Full Stack -> Agent -> Voice Agent","voice":True})
 
 @flask_app.route("/api/files")
 def api_files():
-    try:
-        files = os.listdir(".")
-        return jsonify({"files": files, "count": len(files), "time": datetime.now().isoformat()})
-    except Exception as e:
-        return jsonify({"error": str(e)})
+    return jsonify({"files": os.listdir("."), "count": len(os.listdir("."))})
 
 @flask_app.route("/api/agent")
 def api_agent():
-    return jsonify({
-        "agent": "Abbas Agent",
-        "day": 6,
-        "mode": "Autonomous",
-        "tools": ["shell","read","write","gitpush","deploy","restart"],
-        "status": "ready",
-        "hosting": "Wispbyte",
-        "example_goals": [
-            "README me Day 6 section add kar",
-            "bot.py me /hello command add kar",
-            "ek file test.py bana aur GitHub push kar"
-        ]
-    })
+    return jsonify({"agent":"Abbas Agent Day 7 Voice","day":7,"tools":["shell","read","write","gitpush","deploy","restart"],"voice":True})
+
+@flask_app.route("/api/voice")
+def api_voice():
+    return jsonify({"voice_agent":"Active","day":7,"features":["Voice Message Transcription","Text-to-Speech Reply","/voice command","Agent via Voice","TTS"],"tts":HAS_TTS,"how_to_use":"Send voice message in Telegram bot, it will transcribe and act as agent"})
 
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
 
-# ================= HELPERS =================
+# HELPERS
 async def call_ai(prompt, system=SYSTEM_PROMPT):
     if not AI_KEY:
-        return "❌ AI_KEY missing! Wispbyte > Variables me AI_KEY add kar"
+        return "AI_KEY missing! Wispbyte > Variables me AI_KEY add kar"
     for model in MODELS:
         try:
             async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {AI_KEY}", "Content-Type": "application/json"},
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": system},
-                            {"role": "user", "content": prompt}
-                        ],
-                        "max_tokens": 1500,
-                        "temperature": 0.7
-                    }
-                )
+                resp = await client.post("https://openrouter.ai/api/v1/chat/completions",headers={"Authorization": f"Bearer {AI_KEY}","Content-Type":"application/json"},json={"model":model,"messages":[{"role":"system","content":system},{"role":"user","content":prompt}],"max_tokens":1500,"temperature":0.7})
                 data = resp.json()
                 if "choices" in data:
                     return data["choices"][0]["message"]["content"]
-        except Exception:
+        except:
             continue
-    return "⚠️ AI models busy - thodi der baad try kar"
+    return "Models busy - thodi der baad try kar"
 
 def exec_shell(cmd):
     try:
@@ -170,38 +114,76 @@ def read_file_content(fname):
     try:
         if not os.path.exists(fname):
             return f"File {fname} not found"
-        with open(fname, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(fname,'r',encoding='utf-8',errors='ignore') as f:
             data = f.read()
         if len(data) > 3000:
-            data = data[:3000] + "\n...truncated"
+            data = data[:3000] + "...truncated"
         return data
     except Exception as e:
         return f"Read error: {e}"
 
 def write_file_content(fname, content):
     try:
-        with open(fname, 'w', encoding='utf-8') as f:
+        with open(fname,'w',encoding='utf-8') as f:
             f.write(content)
-        return f"✅ Written {fname} ({len(content)} chars)"
+        return f"Written {fname} ({len(content)} chars)"
     except Exception as e:
         return f"Write error: {e}"
 
-# ================= AGENT LOOP - DAY 6 =================
+# VOICE - TTS
+def text_to_voice(text, filename="voice_reply.mp3"):
+    try:
+        if not HAS_TTS:
+            return None
+        # Clean text for TTS - remove markdown, limit length
+        clean = re.sub(r'\*\*|__|`|\[.*?\]\(.*?\)', '', text)
+        clean = clean[:500]  # Limit for voice
+        tts = gTTS(text=clean, lang='en', slow=False)
+        tts.save(filename)
+        return filename
+    except Exception as e:
+        print(f"TTS error: {e}")
+        return None
+
+# VOICE - STT (Transcription via OpenAI Whisper)
+async def transcribe_voice(file_path):
+    # Try OpenRouter Whisper or OpenAI Whisper
+    try:
+        # Try OpenRouter audio transcription
+        async with httpx.AsyncClient(timeout=60) as client:
+            with open(file_path, 'rb') as f:
+                files = {'file': (file_path, f, 'audio/ogg')}
+                data = {'model': 'openai/whisper-large-v3'}
+                headers = {"Authorization": f"Bearer {AI_KEY}"}
+                # Try OpenRouter
+                resp = await client.post("https://openrouter.ai/api/v1/audio/transcriptions", headers=headers, files=files, data=data)
+                if resp.status_code == 200:
+                    j = resp.json()
+                    return j.get("text", "") or j.get("transcription", "")
+                # Try OpenAI direct if OPENAI_KEY different
+                if OPENAI_KEY and OPENAI_KEY != AI_KEY:
+                    headers2 = {"Authorization": f"Bearer {OPENAI_KEY}"}
+                    resp2 = await client.post("https://api.openai.com/v1/audio/transcriptions", headers=headers2, files=files, data={"model":"whisper-1"})
+                    if resp2.status_code == 200:
+                        return resp2.json().get("text","")
+    except Exception as e:
+        print(f"Transcription error: {e}")
+    return ""
+
+# AGENT LOOP
 async def agent_loop(goal, update):
     history = f"USER GOAL: {goal}\n"
-    await update.message.reply_text(f"🤖 Abbas Agent Day 1-6 Final Activated!\n🎯 Goal: {goal}\n🧠 Planning...")
+    await update.message.reply_text(f"🤖 Abbas Agent Day 7 Voice Final Activated!\n🎯 Goal: {goal}\n🧠 Planning...")
 
     for step in range(1, 9):
         prompt_text = history + f"\nStep {step}/8. Think and if need tool output JSON. If complete say FINAL ANSWER."
         ai_resp = await call_ai(prompt_text, system=AGENT_SYSTEM)
-        
         tool_match = re.search(r'\{[^}]*"tool"[^}]*\}', ai_resp, re.DOTALL)
         if tool_match:
             try:
                 tool_json = json.loads(tool_match.group(0))
                 tool_name = tool_json.get("tool")
                 await update.message.reply_text(f"Step {step}: {ai_resp[:1000]}\n\nTool: {tool_name}")
-
                 result = ""
                 if tool_name == "shell":
                     result = exec_shell(tool_json.get("cmd", "ls -la"))
@@ -211,17 +193,16 @@ async def agent_loop(goal, update):
                     result = write_file_content(tool_json.get("file", "test.txt"), tool_json.get("content", ""))
                 elif tool_name == "gitpush":
                     exec_shell(f'git remote set-url origin https://{GITHUB_PAT}@github.com/{GITHUB_REPO}.git')
-                    msg = tool_json.get("msg", "Day 6 Final Agent update")
+                    msg = tool_json.get("msg", "Day 7 Voice update")
                     cmd = f'git config user.email "agent@abbas.com" && git config user.name "Abbas Agent" && git add . && git commit -m "{msg}" || echo "nothing" && git push origin main'
                     result = exec_shell(cmd)
                 elif tool_name == "deploy":
                     result = exec_shell("git pull origin main")
                 elif tool_name == "restart":
-                    await update.message.reply_text("🔄 Agent restarting Wispbyte to apply changes...")
+                    await update.message.reply_text("🔄 Agent restarting Wispbyte...")
                     os._exit(0)
                 else:
                     result = f"Unknown tool {tool_name}"
-
                 await update.message.reply_text(f"Tool Result:\n{result[:3500]}")
                 history += f"\nStep {step} AI: {ai_resp[:500]}\nTool {tool_name} -> {result[:1000]}\n"
                 if "FINAL" in ai_resp.upper():
@@ -233,75 +214,54 @@ async def agent_loop(goal, update):
         else:
             await update.message.reply_text(f"Step {step} - Thinking:\n{ai_resp[:2500]}")
             history += f"\nStep {step} - {ai_resp[:800]}\n"
-            if "FINAL" in ai_resp.upper() or "ho gaya" in ai_resp.lower() or "complete" in ai_resp.lower():
+            if "FINAL" in ai_resp.upper() or "ho gaya" in ai_resp.lower():
                 break
-
     final_summary = await call_ai(f"Goal: {goal}\nHistory: {history}\nGive final summary Roman Urdu/Hinglish.", system=SYSTEM_PROMPT)
     await update.message.reply_text(f"🎉 Agent Mission Complete!\n\n{final_summary}")
+    # Voice reply too
+    if HAS_TTS:
+        vf = text_to_voice(final_summary)
+        if vf and os.path.exists(vf):
+            try:
+                await update.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply")
+            except:
+                pass
 
-# ================= COMMANDS - DAY 1 to DAY 6 =================
-# Day 1-2: /start
+# COMMANDS
 async def start(u, c):
     await u.message.reply_text(
-        f"🤖 **Abbas Hussain AI - Day 1-6 Final ✅**\n\n"
-        f"**Repo:** {GITHUB_REPO}\n"
-        f"**PAT:** {'✅' if GITHUB_PAT else '❌'}\n"
-        f"**Vercel:** {VERCEL_URL}\n"
-        f"**Hosting:** Wispbyte 🌐\n"
-        f"**Python:** {platform.python_version()}\n\n"
-        f"**Day 3:** /id /battery /ls /run /ai\n"
-        f"**Day 4:** /deploy /backup /setremote /gitpush /uptime\n"
-        f"**Day 5:** /web\n"
-        f"**Day 6:** /agent <goal> + /kingff + /ping + /help 🧠🤖\n\n"
-        f"**Examples:**\n"
-        f"/agent README me Day 6 section add kar\n"
-        f"/agent bot.py me /hello add kar\n"
-        f"/kingff - Journey\n\n"
-        f"KingFF Faucet to Full Stack Agent! 🚀",
+        f"🤖 **Abbas AI - Day 7 Voice Agent FINAL ✅**\n\n"
+        f"**Repo:** {GITHUB_REPO}\n**PAT:** {'✅' if GITHUB_PAT else '❌'}\n**Vercel:** {VERCEL_URL}\n"
+        f"**Hosting:** Wispbyte 🌐\n**Python:** {platform.python_version()}\n**TTS:** {'✅' if HAS_TTS else '❌'}\n\n"
+        f"**Day 3:** /id /battery /ls /run /ai\n**Day 4:** /deploy /backup /setremote /gitpush /uptime\n"
+        f"**Day 5:** /web\n**Day 6:** /agent <goal> + /kingff + /ping + /help\n**Day 7 NEW:** /voice + Voice Messages 🎤🧠\n\n"
+        f"**Day 7 Features:**\n🎤 Voice bhej - Agent sunega!\n🔊 Voice me jawab dega!\n🧠 Bol ke /agent goal de sakta hai!\n\n"
+        f"**Examples:**\n/voice - Voice agent guide\nVoice msg: 'README me Day 7 add kar'\n/agent + voice combo!\n\nKingFF to Voice Agent! 🚀",
         parse_mode='Markdown'
     )
 
-# Day 3: /id
 async def get_id(u, c):
     await u.message.reply_text(f"🔑 ID: `{u.effective_user.id}`", parse_mode='Markdown')
 
-# Day 3: /battery
 async def battery(u, c):
     if u.effective_user.id != OWNER_ID:
         return
-    await u.message.reply_text(
-        f"🖥️ **Day 1-6 Final - Wispbyte**\n"
-        f"Python: {platform.python_version()}\n"
-        f"Platform: {platform.system()} {platform.release()}\n"
-        f"Time: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}\n"
-        f"PAT: {'✅' if GITHUB_PAT else '❌'}\n"
-        f"Vercel: {VERCEL_URL}\n"
-        f"Repo: {GITHUB_REPO}\n"
-        f"Mode: Agent Final 🧠\n"
-        f"Hosting: Wispbyte ✅\n"
-        f"Files: {len(os.listdir('.'))}",
-        parse_mode='Markdown'
-    )
+    await u.message.reply_text(f"🖥️ **Day 7 Voice Agent - Wispbyte**\nPython: {platform.python_version()}\nTime: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}\nPAT: {'✅' if GITHUB_PAT else '❌'}\nVercel: {VERCEL_URL}\nRepo: {GITHUB_REPO}\nMode: Voice Agent 🎤\nTTS: {'✅' if HAS_TTS else '❌'}\nFiles: {len(os.listdir('.'))}", parse_mode='Markdown')
 
-# Day 3: /ls
 async def ls_files(u, c):
     if u.effective_user.id != OWNER_ID:
         return
     files = os.listdir(".")
-    text = "📁 Files:\n" + "\n".join([f"- {f}" for f in files[:50]])
-    await u.message.reply_text(text)
+    await u.message.reply_text("📁 Files:\n" + "\n".join([f"- {f}" for f in files[:50]]))
 
-# Day 3: /run
 async def run_cmd(u, c):
     if u.effective_user.id != OWNER_ID:
         return
     cmd = " ".join(c.args)
     if not cmd:
         return await u.message.reply_text("Usage: /run ls -la")
-    result = exec_shell(cmd)
-    await u.message.reply_text(f"$ {cmd}\n{result[:3500]}")
+    await u.message.reply_text(f"$ {cmd}\n{exec_shell(cmd)[:3500]}")
 
-# Day 3: /ai
 async def ai_command(u, c):
     q = " ".join(c.args)
     if not q:
@@ -309,187 +269,206 @@ async def ai_command(u, c):
     await u.message.reply_chat_action("typing")
     ans = await call_ai(q)
     await u.message.reply_text(ans)
+    if HAS_TTS:
+        vf = text_to_voice(ans)
+        if vf and os.path.exists(vf):
+            try:
+                await u.message.reply_voice(open(vf, 'rb'))
+            except:
+                pass
 
-# Day 4: /deploy
 async def deploy(u, c):
     if u.effective_user.id != OWNER_ID:
         return
-    await u.message.reply_text("🔄 Pulling from GitHub...")
-    result = exec_shell("git pull origin main")
-    await u.message.reply_text(result[:3500])
+    await u.message.reply_text("🔄 Pulling...")
+    await u.message.reply_text(exec_shell("git pull origin main")[:3500])
 
-# Day 4: /backup
 async def backup(u, c):
     if u.effective_user.id != OWNER_ID:
         return
-    await u.message.reply_text("📦 Backup bana raha hun...")
+    await u.message.reply_text("📦 Backup...")
     try:
-        with zipfile.ZipFile("backup.zip", "w") as z:
-            for fname in ["bot.py", "requirements.txt", "README.md", "Dockerfile", "fly.toml"]:
+        with zipfile.ZipFile("backup.zip","w") as z:
+            for fname in ["bot.py","requirements.txt","README.md"]:
                 if os.path.exists(fname):
                     z.write(fname)
-        await u.message.reply_document(open("backup.zip", "rb"), caption="📦 Day 1-6 Final Backup - Wispbyte!")
+        await u.message.reply_document(open("backup.zip","rb"), caption="📦 Day 7 Voice Backup!")
     except Exception as e:
         await u.message.reply_text(f"Backup error: {e}")
 
-# Day 4: /setremote
 async def setremote(u, c):
     if u.effective_user.id != OWNER_ID:
         return
     if not GITHUB_PAT:
-        return await u.message.reply_text("❌ GITHUB_PAT not set! Wispbyte > Variables me add kar")
+        return await u.message.reply_text("❌ GITHUB_PAT not set!")
     exec_shell(f'git remote set-url origin https://{GITHUB_PAT}@github.com/{GITHUB_REPO}.git')
     await u.message.reply_text(f"✅ Remote set for {GITHUB_REPO}")
 
-# Day 4: /gitpush
 async def gitpush(u, c):
     if u.effective_user.id != OWNER_ID:
         return
     if not GITHUB_PAT:
         return await u.message.reply_text("❌ GITHUB_PAT not set!")
-    msg = " ".join(c.args) or "Day 1-6 Final update"
+    msg = " ".join(c.args) or "Day 7 Voice update"
     await u.message.reply_text(f"📤 Pushing: {msg}")
     cmd1 = f'git remote set-url origin https://{GITHUB_PAT}@github.com/{GITHUB_REPO}.git'
-    cmd2 = f'git config user.email "abbas@bot.com" && git config user.name "Abbas AI" && git add . && git commit -m "{msg}" || echo "nothing" && git push origin main'
+    cmd2 = f'git config user.email "agent@abbas.com" && git config user.name "Abbas Agent" && git add . && git commit -m "{msg}" || echo "nothing" && git push origin main'
     exec_shell(cmd1)
-    result = exec_shell(cmd2)
-    await u.message.reply_text(result[:3500])
+    await u.message.reply_text(exec_shell(cmd2)[:3500])
 
-# Day 4: /uptime
 async def uptime(u, c):
-    await u.message.reply_text(f"⏰ Day 1-6 Final - {datetime.now().strftime('%d-%m-%Y %H:%M:%S')} - {VERCEL_URL} 🌐 - Wispbyte ✅")
+    await u.message.reply_text(f"⏰ Day 7 Voice Agent - {datetime.now().strftime('%d-%m-%Y %H:%M:%S')} - {VERCEL_URL} 🌐 - Wispbyte ✅🎤")
 
-# Day 5: /web
 async def web_command(u, c):
-    await u.message.reply_text(
-        f"🌐 **Day 5-6 Vercel + Wispbyte Live!**\n\n"
-        f"🔥 Vercel: {VERCEL_URL}\n"
-        f"📊 Status: {VERCEL_URL}/api/status\n"
-        f"📁 Files: {VERCEL_URL}/api/files\n"
-        f"🤖 Agent: {VERCEL_URL}/api/agent\n"
-        f"Local: :{PORT}\n"
-        f"Hosting: Wispbyte\n"
-        f"GitHub: https://github.com/{GITHUB_REPO}",
-        parse_mode='Markdown'
-    )
+    await u.message.reply_text(f"🌐 **Day 7 Voice + Vercel Live!**\nVercel: {VERCEL_URL}\nStatus: {VERCEL_URL}/api/status\nVoice API: {VERCEL_URL}/api/voice\nLocal: :{PORT}\nHosting: Wispbyte\nGitHub: https://github.com/{GITHUB_REPO}", parse_mode='Markdown')
 
-# Day 6: /agent
 async def agent_command(u, c):
     if u.effective_user.id != OWNER_ID:
-        return await u.message.reply_text("❌ Sirf owner agent chala sakta hai! OWNER_ID check kar")
+        return await u.message.reply_text("❌ Sirf owner!")
     goal = " ".join(c.args)
     if not goal:
-        return await u.message.reply_text(
-            "Usage: /agent <goal>\n\n"
-            "Examples:\n"
-            "/agent README me Day 6 section add kar\n"
-            "/agent bot.py me /hello command add kar\n"
-            "/agent ek file test.py bana jo hello world print kare\n"
-            "/agent Vercel status check kar"
-        )
+        return await u.message.reply_text("Usage: /agent <goal>\n/agent README me Day 7 add kar")
     await agent_loop(goal, u)
 
-# Day 6: /kingff
 async def kingff_command(u, c):
     await u.message.reply_text(
-        "👑 **KingFF Faucet -> Agent Journey - By Abbas Hussain (16yo)**\n\n"
-        "Day 0: Vie Faucet 💰 - Pehla faucet idea\n"
-        "Day 0.5: KingFF Faucet 🚀 - Tera apna startup! Users, faucet claim, referral system\n"
-        "Day 1: GitHub + 24/7 Bot Hosting - Code ko online laya\n"
-        "Day 2: Telegram Bot LIVE - /start working, Full Stack ki shuruaat\n"
-        "Day 3: Shell + 3 AI Models + /id /battery /ls /run /ai 🧠\n"
-        "Day 4: GitHub PAT - /deploy /backup /setremote /gitpush /uptime 🔑\n"
-        "Day 5: Vercel Live Dashboard + Wispbyte Transfer 🌐\n"
-        "  https://abbas-ai-dashboard.vercel.app\n"
-        "  bot-hosting.net (7 days free) -> Wispbyte (long term)\n"
-        "Day 6: OpenClaw Agent - /agent <goal> 🤖 - Khud sochta, plan karta, action leta!\n"
-        "Day 6.1: Bugfix Markdown Parse + Auto Restart + /kingff ✅\n\n"
-        "16 saal ki umar me, Islamabad se, Vie se KingFF, Bot se Agent!\n"
-        "Wispbyte + Vercel + GitHub + AI = Full Stack Engineer! 💪\n\n"
-        "Next: Day 7 - Voice Agent + Multi-Agent + Dashboard Pro!",
+        "👑 **KingFF -> Voice Agent Journey - By Abbas Hussain (16yo)**\n\n"
+        "Day 0: Vie Faucet 💰\nDay 0.5: KingFF Faucet 🚀\nDay 1: GitHub + 24/7 Hosting\nDay 2: Telegram Bot LIVE\n"
+        "Day 3: Shell + 3 AI Models + /id /battery /ls /run /ai 🧠\nDay 4: GitHub PAT - /deploy /backup /setremote /gitpush /uptime 🔑\n"
+        "Day 5: Vercel Live Dashboard + Wispbyte Transfer 🌐\nDay 6: OpenClaw Agent - /agent <goal> 🤖\n"
+        "Day 6.1: Bugfix Markdown + Auto Restart + /kingff ✅\nDay 7: Voice Agent - /voice + Voice Messages 🎤 - Bol ke command de, Agent sunega, voice me jawab dega!\n\n"
+        "16 saal, Islamabad se, Vie se KingFF, Bot se Agent se Voice Agent! Wispbyte + Vercel + GitHub + AI + Voice = Full Stack Engineer! 💪",
         parse_mode='Markdown'
     )
 
-# Day 6: /ping
 async def ping_command(u, c):
-    await u.message.reply_text(f"🏓 Pong! Day 1-6 Final Wispbyte LIVE ✅\n{datetime.now().strftime('%H:%M:%S')} - {VERCEL_URL}")
+    await u.message.reply_text(f"🏓 Pong! Day 7 Voice Wispbyte LIVE ✅\n{datetime.now().strftime('%H:%M:%S')} - {VERCEL_URL} 🎤")
 
-# Day 6: /help
 async def help_command(u, c):
     await u.message.reply_text(
-        "📚 **Abbas AI - Day 1-6 Final Commands**\n\n"
-        "**Day 3:**\n"
-        "/id - Tera Telegram ID\n"
-        "/battery - System info (owner only)\n"
-        "/ls - Files list (owner)\n"
-        "/run <cmd> - Shell command (owner)\n"
-        "/ai <sawal> - AI se baat\n\n"
-        "**Day 4:**\n"
-        "/deploy - GitHub se pull\n"
-        "/backup - Backup zip\n"
-        "/setremote - PAT se remote set\n"
-        "/gitpush <msg> - GitHub push\n"
-        "/uptime - Time + Vercel\n\n"
-        "**Day 5:**\n"
-        "/web - Vercel dashboard\n\n"
-        "**Day 6:**\n"
-        "/agent <goal> - Autonomous Agent 🤖\n"
-        "/kingff - KingFF Journey 👑\n"
-        "/ping - Check live\n"
-        "/help - Ye list\n\n"
-        "Wispbyte + Vercel Live!",
+        "📚 **Abbas AI - Day 1-7 Voice Final Commands**\n\n"
+        "Day 3:\n/id - ID\n/battery - System info\n/ls - Files\n/run <cmd> - Shell\n/ai <sawal> - AI\n\n"
+        "Day 4:\n/deploy - Pull\n/backup - Zip\n/setremote - PAT set\n/gitpush <msg> - Push\n/uptime - Time\n\n"
+        "Day 5:\n/web - Vercel\n\nDay 6:\n/agent <goal> - Agent 🤖\n/kingff - Journey 👑\n/ping - Live\n/help - List\n\n"
+        "Day 7 NEW:\n/voice - Voice Agent Guide 🎤\n🎤 Voice Message bhejo - Agent sunega!\n🔊 Voice reply bhi dega!\n\nWispbyte + Voice Live!",
         parse_mode='Markdown'
     )
 
-# Normal chat
+async def voice_command(u, c):
+    await u.message.reply_text(
+        "🎤 **Day 7 Voice Agent - Guide**\n\n"
+        "**Kaise use kare:**\n"
+        "1. 🎙️ Telegram me Voice Message button dabao aur bolo:\n"
+        "   'README me Day 7 section add kar'\n"
+        "   'bot.py me /hello command add kar'\n"
+        "   'Ek file test.txt bana'\n\n"
+        "2. 🤖 Agent voice ko text me convert karega (Whisper)\n"
+        "3. 🧠 Phir us goal pe Agent mode chalega\n"
+        "4. 🔊 Jawab text + voice dono me dega!\n\n"
+        "**Commands:**\n"
+        "/voice - Ye guide\n"
+        "Voice msg: 'Meri journey bata' -> /kingff jaisa jawab\n"
+        "Voice msg: 'Battery dikha' -> /battery\n"
+        "Voice msg: 'Agent ek file bana' -> /agent task\n\n"
+        "**Requirements:**\n"
+        f"TTS: {'✅ gTTS installed' if HAS_TTS else '❌ pip install gTTS'}\n"
+        "STT: OpenRouter Whisper (AI_KEY se)\n\n"
+        "Wispbyte pe Voice Agent LIVE! 🎤🚀",
+        parse_mode='Markdown'
+    )
+
+# VOICE MESSAGE HANDLER - DAY 7
+async def handle_voice(u, c):
+    if u.effective_user.id != OWNER_ID:
+        await u.message.reply_text("❌ Voice agent sirf owner ke liye! OWNER_ID check kar")
+        return
+
+    await u.message.reply_text("🎤 Voice received! Transcribing... ⏳")
+    try:
+        # Get file
+        voice_file = await u.message.voice.get_file() if u.message.voice else await u.message.audio.get_file()
+        file_path = f"voice_{u.message.message_id}.ogg"
+        await voice_file.download_to_drive(file_path)
+        
+        # Transcribe
+        transcribed = await transcribe_voice(file_path)
+        
+        # Cleanup file
+        try:
+            os.remove(file_path)
+        except:
+            pass
+
+        if not transcribed or len(transcribed.strip()) < 2:
+            # Fallback - if transcription fails, use AI to guess or ask
+            transcribed = ""
+            await u.message.reply_text(
+                "⚠️ Voice transcribe nahi ho paya (Whisper API key issue).\n\n"
+                "Lekin Day 7 Voice Agent ready hai!\n\n"
+                "Workaround:\n"
+                "1. Voice ke saath text bhi likh do\n"
+                "2. Ya /agent command use kar\n"
+                "3. Ya OPENAI_API_KEY env me add kar (Whisper ke liye)\n\n"
+                "Voice file receive ho gayi hai - TTS reply test karta hun!"
+            )
+            # Still do TTS demo
+            if HAS_TTS:
+                demo_text = "Voice agent Day 7 live hai, bro! Bol ke command de, main sun raha hun!"
+                vf = text_to_voice(demo_text)
+                if vf:
+                    try:
+                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Demo Voice Reply")
+                    except:
+                        pass
+            return
+
+        await u.message.reply_text(f"🎤 **Transcribed:**\n`{transcribed}`\n\n🧠 Agent soch raha hai...", parse_mode='Markdown')
+
+        # If transcribed text looks like a goal, run agent loop, else normal AI
+        lower = transcribed.lower()
+        if any(x in lower for x in ["bana", "add kar", "create", "file", "readme", "bot.py", "command", "push", "deploy", "journey", "battery", "kingff"]):
+            # Run as agent goal
+            await agent_loop(transcribed, u)
+        else:
+            # Normal chat + voice reply
+            await u.message.reply_chat_action("typing")
+            ans = await call_ai(transcribed)
+            await u.message.reply_text(ans)
+            if HAS_TTS:
+                vf = text_to_voice(ans)
+                if vf and os.path.exists(vf):
+                    try:
+                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply")
+                    except Exception as e:
+                        print(f"Voice send error: {e}")
+
+    except Exception as e:
+        await u.message.reply_text(f"❌ Voice handle error: {e}\n\nTry /voice for guide")
+
 async def handle_message(u, c):
     await u.message.reply_chat_action("typing")
     ans = await call_ai(u.message.text)
     await u.message.reply_text(ans)
 
-# ================= MAIN =================
 def main():
     try:
         asyncio.set_event_loop(asyncio.new_event_loop())
     except:
         pass
     threading.Thread(target=run_flask, daemon=True).start()
-
     if not BOT_TOKEN:
-        print("❌ BOT_TOKEN missing! Set in Wispbyte > Variables")
+        print("❌ BOT_TOKEN missing!")
         return
-
     app = Application.builder().token(BOT_TOKEN).build()
-
-    commands = [
-        ("start", start),
-        ("id", get_id),
-        ("battery", battery),
-        ("ls", ls_files),
-        ("run", run_cmd),
-        ("ai", ai_command),
-        ("deploy", deploy),
-        ("backup", backup),
-        ("setremote", setremote),
-        ("gitpush", gitpush),
-        ("uptime", uptime),
-        ("web", web_command),
-        ("agent", agent_command),
-        ("kingff", kingff_command),
-        ("ping", ping_command),
-        ("help", help_command),
-    ]
-
-    for cmd_name, func in commands:
-        app.add_handler(CommandHandler(cmd_name, func))
-
+    cmds = [("start",start),("id",get_id),("battery",battery),("ls",ls_files),("run",run_cmd),("ai",ai_command),("deploy",deploy),("backup",backup),("setremote",setremote),("gitpush",gitpush),("uptime",uptime),("web",web_command),("agent",agent_command),("kingff",kingff_command),("ping",ping_command),("help",help_command),("voice",voice_command)]
+    for n,f in cmds:
+        app.add_handler(CommandHandler(n,f))
+    # Voice handler - Day 7
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print(f"✅ Abbas AI ONLINE - Day 1 to Day 6 Final - Python {platform.python_version()}")
-    print(f"🌐 Flask on :{PORT} | Vercel: {VERCEL_URL} | Wispbyte Live")
-    print(f"👑 KingFF Faucet -> Agent - Ready!")
+    print(f"✅ Abbas AI ONLINE - Day 7 Voice Agent Final - Python {platform.python_version()}")
+    print(f"🌐 Flask :{PORT} | Vercel {VERCEL_URL} | Wispbyte | TTS {HAS_TTS} | Voice Agent LIVE 🎤")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()
-    
+    main()    
