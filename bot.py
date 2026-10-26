@@ -15,7 +15,7 @@ except:
     HAS_TTS = False
 
 # ENV
-print("🔧 Abbas AI Day 7 Voice Agent Loading...")
+print("🔧 Abbas AI Day 7.2 Voice Agent Loading...")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AI_KEY = os.getenv("AI_KEY")
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "") or AI_KEY  # Try AI_KEY as OpenAI key too
@@ -56,7 +56,7 @@ def dash():
     .card{{background:#1e293b;padding:20px;border-radius:12px;margin:15px 0}} 
     a{{color:#38bdf8}} .badge{{background:#22c55e;padding:4px 10px;border-radius:20px;font-size:12px}} .voice{{background:#7c3aed}}</style>
     </head><body>
-    <h1>🎤 Abbas AI Day 7 Voice Agent</h1>
+    <h1>🎤 Abbas AI Day 7.2 Voice Agent</h1>
     <div class="card"><span class="badge">LIVE</span> <span class="badge voice">VOICE AGENT</span> Wispbyte + Vercel<br>
     <b>Repo:</b> {GITHUB_REPO}<br><b>Vercel:</b> <a href="{VERCEL_URL}">{VERCEL_URL}</a><br>
     <b>Time:</b> {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}<br><b>Python:</b> {platform.python_version()}<br><b>TTS:</b> {HAS_TTS}</div>
@@ -68,7 +68,7 @@ def dash():
 
 @flask_app.route("/api/status")
 def api_status():
-    return jsonify({"status":"online","day":"1-7 Voice","version":"Day 7 Voice Agent","hosting":"Wispbyte","vercel":VERCEL_URL,"repo":GITHUB_REPO,"python":platform.python_version(),"pat":bool(GITHUB_PAT),"tts":HAS_TTS,"time":datetime.now().isoformat(),"commands":["/start","/id","/battery","/ls","/run","/ai","/deploy","/backup","/setremote","/gitpush","/uptime","/web","/agent","/kingff","/ping","/help","/voice"],"journey":"Vie Faucet -> KingFF -> Full Stack -> Agent -> Voice Agent","voice":True})
+    return jsonify({"status":"online","day":"1-7 Voice","version":"Day 7.2 Voice Agent","hosting":"Wispbyte","vercel":VERCEL_URL,"repo":GITHUB_REPO,"python":platform.python_version(),"pat":bool(GITHUB_PAT),"tts":HAS_TTS,"time":datetime.now().isoformat(),"commands":["/start","/id","/battery","/ls","/run","/ai","/deploy","/backup","/setremote","/gitpush","/uptime","/web","/agent","/kingff","/ping","/help","/voice"],"journey":"Vie Faucet -> KingFF -> Full Stack -> Agent -> Voice Agent","voice":True})
 
 @flask_app.route("/api/files")
 def api_files():
@@ -230,7 +230,7 @@ async def agent_loop(goal, update):
 # COMMANDS
 async def start(u, c):
     await u.message.reply_text(
-        f"🤖 **Abbas AI - Day 7.1 Voice Agent FINAL FIXED ✅**\n\n"
+        f"🤖 **Abbas AI - Day 7.2 Voice Agent FINAL FIXED ✅**\n\n"
         f"**Repo:** {GITHUB_REPO}\n**PAT:** {'✅' if GITHUB_PAT else '❌'}\n**Vercel:** {VERCEL_URL}\n"
         f"**Hosting:** Wispbyte 🌐\n**Python:** {platform.python_version()}\n**TTS:** {'✅' if HAS_TTS else '❌'}\n\n"
         f"**Day 3:** /id /battery /ls /run /ai\n**Day 4:** /deploy /backup /setremote /gitpush /uptime\n"
@@ -246,7 +246,7 @@ async def get_id(u, c):
 async def battery(u, c):
     if u.effective_user.id != OWNER_ID:
         return
-    await u.message.reply_text(f"🖥️ **Day 7 Voice Agent - Wispbyte**\nPython: {platform.python_version()}\nTime: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}\nPAT: {'✅' if GITHUB_PAT else '❌'}\nVercel: {VERCEL_URL}\nRepo: {GITHUB_REPO}\nMode: Voice Agent 🎤\nTTS: {'✅' if HAS_TTS else '❌'}\nFiles: {len(os.listdir('.'))}", parse_mode='Markdown')
+    await u.message.reply_text(f"🖥️ **Day 7.2 Voice Agent - Wispbyte**\nPython: {platform.python_version()}\nTime: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}\nPAT: {'✅' if GITHUB_PAT else '❌'}\nVercel: {VERCEL_URL}\nRepo: {GITHUB_REPO}\nMode: Voice Agent 🎤\nTTS: {'✅' if HAS_TTS else '❌'}\nFiles: {len(os.listdir('.'))}", parse_mode='Markdown')
 
 async def ls_files(u, c):
     if u.effective_user.id != OWNER_ID:
@@ -317,7 +317,7 @@ async def gitpush(u, c):
     await u.message.reply_text(exec_shell(cmd2)[:3500])
 
 async def uptime(u, c):
-    await u.message.reply_text(f"⏰ Day 7 Voice Agent - {datetime.now().strftime('%d-%m-%Y %H:%M:%S')} - {VERCEL_URL} 🌐 - Wispbyte ✅🎤")
+    await u.message.reply_text(f"⏰ Day 7.2 Voice Agent - {datetime.now().strftime('%d-%m-%Y %H:%M:%S')} - {VERCEL_URL} 🌐 - Wispbyte ✅🎤")
 
 async def web_command(u, c):
     await u.message.reply_text(f"🌐 **Day 7 Voice + Vercel Live!**\nVercel: {VERCEL_URL}\nStatus: {VERCEL_URL}/api/status\nVoice API: {VERCEL_URL}/api/voice\nLocal: :{PORT}\nHosting: Wispbyte\nGitHub: https://github.com/{GITHUB_REPO}", parse_mode='Markdown')
@@ -355,30 +355,40 @@ async def help_command(u, c):
     )
 
 async def voice_command(u, c):
-    # If user wrote /voice <text> - treat as AI query + voice reply - FIX for Day 7.1
+    # Day 7.2 - /voice now also acts as AGENT if goal contains action keywords
     text = " ".join(c.args) if c.args else ""
     if text:
         await u.message.reply_chat_action("typing")
-        await u.message.reply_text(f"🎤 Voice command: {text}\n🧠 Soch raha hun...")
-        ans = await call_ai(text)
-        await u.message.reply_text(ans)
-        if HAS_TTS:
-            vf = text_to_voice(ans)
-            if vf and os.path.exists(vf):
-                try:
-                    await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply - Day 7.1")
+        # Check if it's an agent task
+        lower = text.lower()
+        agent_keywords = ["bana", "add kar", "create", "file", "readme", "bot.py", "command", "push", "deploy", "edit", "section", "journey", "update", "likh", "write"]
+        is_agent_task = any(k in lower for k in agent_keywords)
+        
+        if is_agent_task:
+            await u.message.reply_text(f"🎤 Voice command: {text}\n🤖 Agent mode detected! 🧠 Planning...")
+            await agent_loop(text, u)
+            return
+        else:
+            await u.message.reply_text(f"🎤 Voice command: {text}\n🧠 Soch raha hun...")
+            ans = await call_ai(text)
+            await u.message.reply_text(ans)
+            if HAS_TTS:
+                vf = text_to_voice(ans)
+                if vf and os.path.exists(vf):
                     try:
-                        os.remove(vf)
-                    except:
-                        pass
-                except Exception as e:
-                    await u.message.reply_text(f"TTS send error: {e}")
-        return
+                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply - Day 7.2")
+                        try:
+                            os.remove(vf)
+                        except:
+                            pass
+                    except Exception as e:
+                        await u.message.reply_text(f"TTS send error: {e}")
+            return
 
     # No text - show guide
     tts_status = "✅ gTTS installed" if HAS_TTS else "❌ pip install gTTS"
     await u.message.reply_text(
-        f"🎤 **Day 7 Voice Agent - Guide**\n\n"
+        f"🎤 **Day 7.2 Voice Agent - Guide**\n\n"
         f"**Kaise use kare:**\n"
         f"1. 🎙️ Telegram me Voice Message button dabao aur bolo:\n"
         f"   'README me Day 7 section add kar'\n"
@@ -425,7 +435,7 @@ async def handle_voice(u, c):
             await u.message.reply_text(
                 "⚠️ Voice transcribe nahi ho paya (Whisper API need OPENAI_API_KEY).\n\n"
                 "Lekin maine voice receive kar li hai! ✅\n"
-                "Day 7.1 Fix: Ab /voice <text> bhi kaam karega!\n\n"
+                "Day 7.2 Fix: Ab /voice <text> bhi kaam karega!\n\n"
                 "Try karo:\n"
                 "/voice Bhai yaar aik kaam karoo\n"
                 "Ya dobara voice bhejo thoda slow aur clear bol ke!\n\n"
@@ -436,7 +446,7 @@ async def handle_voice(u, c):
                 vf = text_to_voice(demo_text)
                 if vf and os.path.exists(vf):
                     try:
-                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Day 7.1 Demo Voice Reply - Fallback")
+                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Day 7.2 Demo Voice Reply - Fallback")
                         try:
                             os.remove(vf)
                         except:
@@ -489,7 +499,7 @@ def main():
     # Voice handler - Day 7
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print(f"✅ Abbas AI ONLINE - Day 7.1 Voice Agent Fixed - Python {platform.python_version()}")
+    print(f"✅ Abbas AI ONLINE - Day 7.2 Voice Agent Fixed - Python {platform.python_version()}")
     print(f"🌐 Flask :{PORT} | Vercel {VERCEL_URL} | Wispbyte | TTS {HAS_TTS} | Voice Agent LIVE 🎤")
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
