@@ -19,7 +19,7 @@ try:
 except:
     pass
 
-print("🔧 Abbas AI Day 7.4 Human Voice Agent Loading...")
+print("🔧 Abbas AI Day 8 REAL Human Voice + Designed UI Loading...")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AI_KEY = os.getenv("AI_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
@@ -29,10 +29,22 @@ OWNER_ID = int(os.getenv("OWNER_ID", "8752799745"))
 VERCEL_URL = os.getenv("VERCEL_URL", "https://abbas-ai-dashboard.vercel.app")
 
 HAS_TTS = False
+HAS_EDGE_TTS = False
+
+# Try Edge-TTS first (Real Human Voice - ChatGPT style)
+try:
+    import edge_tts
+    HAS_EDGE_TTS = True
+    HAS_TTS = True
+    print(f"✅ Edge-TTS OK - REAL Human Voice Ready!")
+except Exception as e:
+    print(f"⚠️ Edge-TTS not found: {e} - trying gTTS")
+
 try:
     from gtts import gTTS
-    HAS_TTS = True
-    print(f"✅ gTTS OK")
+    if not HAS_EDGE_TTS:
+        HAS_TTS = True
+    print(f"✅ gTTS OK - Fallback")
 except Exception as e:
     print(f"❌ gTTS fail: {e}")
 
@@ -93,11 +105,11 @@ If user asks list like 30 terms, give clean numbered list: Term = Meaning - Expl
     
     return "❌ Yaar AI thoda busy hai, 10 sec baad try kar bro! 🔥"
 
-# === HUMAN-LIKE TTS ===
+# === DAY 8: REAL HUMAN VOICE + DESIGNED UI ===
 def clean_for_speech(text):
-    """Make text sound human - remove markdown etc"""
+    """Make text sound human - remove markdown etc for voice"""
     if not text:
-        return "Bro kaam ho gaya hai check kar lo"
+        return "Bro, kaam ho gaya hai, check kar lo!"
     # Remove code blocks
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
     text = re.sub(r'`[^`]*`', '', text)
@@ -105,41 +117,125 @@ def clean_for_speech(text):
     text = re.sub(r'#{1,6}\s?', '', text)
     text = re.sub(r'<[^>]+>', '', text)
     text = re.sub(r'<tool.*?</tool>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<step\d+>.*?</step\d+>', '', text, flags=re.DOTALL)
     text = re.sub(r'https?://\S+', '', text)
-    # Replace emojis
-    text = text.replace("🔥"," ").replace("🚀"," ").replace("😎","").replace("😊","").replace("🤖","").replace("🎤","").replace("✅"," done ").replace("❌","")
+    # Replace emojis with natural words
+    text = text.replace("🔥"," ").replace("🚀"," ").replace("😎","").replace("😊","").replace("🤖","").replace("🎤","").replace("✅"," done ").replace("❌","").replace("💯","").replace("⚡","")
     text = re.sub(r'\n+', '. ', text)
     text = re.sub(r'\s+', ' ', text)
-    if len(text) > 3500:
-        text = text[:3500] + " bas itna hi baaki detail chat me padh lo bro"
+    # For voice, keep under 4000 chars but add natural ending
+    if len(text) > 3800:
+        text = text[:3800] + ". Bas itna hi bro, baaki detail chat me padh lo!"
     return text.strip()
 
-def text_to_voice(text, filename="voice_reply.mp3"):
+async def text_to_voice_edge(text, filename="voice_reply.mp3"):
+    """DAY 8: REAL Human Voice using Edge-TTS - ChatGPT style!"""
+    try:
+        clean_text = clean_for_speech(text)
+        if not clean_text or len(clean_text.strip()) < 3:
+            clean_text = "Bro, kaam ho gaya hai, check kar lo! Full stack engineer banne ka safar jaari hai!"
+        
+        # Choose best voice for Roman Urdu + English mix
+        # en-US-AriaNeural is most natural female, en-US-GuyNeural male, very human
+        # For Urdu mix, we use en-IN or en-US with natural prosody
+        # Best for Abbas: en-US-GuyNeural (Young, friendly, natural)
+        voice = "en-US-GuyNeural"  # Super real human male
+        # Alternative voices to try if needed:
+        # "en-US-AriaNeural" - female super natural
+        # "en-IN-NeerjaNeural" - Indian accent good for mix
+        # "ur-PK-AsadNeural" - for pure Urdu script
+        
+        # Add SSML for more human-like pauses and emotions
+        # Make it sound like ChatGPT voice - natural pauses, friendly
+        # We add some SSML-like natural breaks by adding commas and dots
+        natural_text = clean_text
+        # Add natural conversational fillers for human feel
+        if not natural_text.startswith(("Arre","Yaar","Dekho","Bro")):
+            # Don't add filler if already has, keep natural
+            pass
+        
+        # Edge-TTS async
+        communicate = edge_tts.Communicate(natural_text, voice)
+        await communicate.save(filename)
+        print(f"✅ Edge-TTS Voice saved: {filename} with {voice}")
+        return filename
+    except Exception as e:
+        print(f"Edge-TTS error: {e} - falling back to gTTS")
+        # Fallback to gTTS
+        try:
+            from gtts import gTTS
+            clean_text = clean_for_speech(text)
+            tts = gTTS(clean_text[:4000], lang='en', tld='com', slow=False)
+            tts.save(filename)
+            return filename
+        except Exception as e2:
+            print(f"gTTS fallback error: {e2}")
+            return None
+
+def text_to_voice_sync(text, filename="voice_reply.mp3"):
+    """Sync wrapper for gTTS fallback - for non-async contexts"""
     if not HAS_TTS:
         return None
     try:
         clean_text = clean_for_speech(text)
         if not clean_text or len(clean_text.strip()) < 3:
-            clean_text = "Bro kaam ho gaya hai check kar lo full stack engineer banne ka safar jaari hai"
-        # Add natural pauses
-        natural_text = clean_text.replace("!", "! ").replace("?", "? ")
-        try:
-            tts = gTTS(natural_text, lang='en', tld='com', slow=False)
-            tts.save(filename)
-        except:
-            tts = gTTS(clean_text[:4000], lang='en', slow=False)
-            tts.save(filename)
+            clean_text = "Bro kaam ho gaya hai check kar lo"
+        from gtts import gTTS
+        tts = gTTS(clean_text[:4000], lang='en', tld='com', slow=False)
+        tts.save(filename)
         return filename
     except Exception as e:
-        print(f"TTS error: {e}")
+        print(f"TTS sync error: {e}")
         return None
+
+# For compatibility - old function now calls new async version via asyncio
+def text_to_voice(text, filename="voice_reply.mp3"):
+    """Wrapper - tries to use edge-tts if available via sync call"""
+    # If edge-tts available, we need to run async, but we are in sync context
+    # So try gTTS for sync, edge will be used in async handlers
+    return text_to_voice_sync(text, filename)
+
+# Designed response formatter - Day 8
+def format_designed_response(text, query=""):
+    """Make AI reply responsive and designed - beautiful formatting"""
+    if not text or len(text.strip()) == 0:
+        return "❌ Khali jawab, dobara try karo bro!"
+    
+    # If it's a list of terms (like 30 terms), format beautifully
+    lower_q = query.lower() if query else ""
+    lower_t = text.lower()
+    
+    is_terms = any(k in lower_q or k in lower_t for k in ["30 terms", "30 important", "full stack terms", "api =", "terms batao"])
+    
+    if is_terms or ("\n" in text and text.count("\n") > 10):
+        # Format as beautiful designed list
+        # Keep original but add header and dividers
+        designed = f"📚 **30 Full Stack Developer Terms - Designed by Abbas AI**\n"
+        designed += f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        designed += text
+        designed += f"\n\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        designed += f"💡 **Tip:** In sab terms ko yaad kar lo bro - Interview me kaam ayenge! 🔥\n"
+        designed += f"🎤 Voice me sunne ke liye /voice bol ke pucho!"
+        return designed
+    
+    # Normal beautiful formatting
+    # Add some structure if long
+    if len(text) > 500:
+        designed = f"💬 **Abbas AI Reply**\n"
+        designed += f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        designed += text
+        designed += f"\n\n━━━━━━━━━━━━━━━━━━━━━━"
+        return designed
+    
+    return text
+
 
 # === FLASK ===
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
 def home():
-    return f"Abbas AI Day 7.4 Human Voice Agent LIVE! TTS:{HAS_TTS} | {datetime.now()}"
+    return f"Abbas AI Day 8 REAL Human Voice + Designed UI LIVE! TTS:{HAS_TTS} | {datetime.now()}"
 
 @app_flask.route('/health')
 def health():
@@ -167,7 +263,7 @@ def owner_only(func):
 async def agent_loop(goal, message):
     """Autonomous agent that does file tasks"""
     try:
-        await message.reply_text(f"🤖 Abbas Agent Day 7.4 Activated!\n🎯 Goal: {goal}\n🧠 Planning...")
+        await message.reply_text(f"🤖 Abbas Agent Day 8 Activated!\n🎯 Goal: {goal}\n🧠 Planning...")
         
         # Get file list for context
         try:
@@ -305,30 +401,38 @@ RULES:
         if not final_summary:
             final_summary = f"Goal {goal} pe kaam kiya, check files bro!"
 
-        # Final message
-        await message.reply_text(f"🎉 Agent Mission Complete!\n\n{final_summary[:3000]}")
+        # Final message - Designed
+        designed_final = format_designed_response(final_summary, goal)
+        await message.reply_text(f"🎉 Agent Mission Complete!\n\n{designed_final[:3500]}")
         
-        # Voice reply human-like
+        # Voice reply - REAL Human Voice Day 8
         if HAS_TTS and final_summary:
-            vf = text_to_voice(final_summary)
-            if vf and os.path.exists(vf):
-                try:
-                    await message.reply_voice(open(vf, 'rb'), caption="🎤 Agent Voice Summary - Human Style!")
+            try:
+                if HAS_EDGE_TTS:
+                    vf = await text_to_voice_edge(final_summary, "voice_agent.mp3")
+                else:
+                    vf = text_to_voice_sync(final_summary, "voice_agent.mp3")
+                
+                if vf and os.path.exists(vf):
                     try:
-                        os.remove(vf)
-                    except:
-                        pass
-                except Exception as e:
-                    await message.reply_text(f"Voice error: {e}")
+                        await message.reply_voice(open(vf, 'rb'), caption="🎤 Day 8 REAL Human Voice - Agent Summary!")
+                        try:
+                            os.remove(vf)
+                        except:
+                            pass
+                    except Exception as e:
+                        await message.reply_text(f"Voice error: {e}")
+            except Exception as e:
+                print(f"Agent voice error: {e}")
     except Exception as e:
         await message.reply_text(f"❌ Agent error: {e}\n{traceback.format_exc()[:800]}")
 
 # === COMMANDS ===
 async def start_command(u, c):
     await u.message.reply_text(
-        f"🚀 Abbas AI - Day 7.4 Human Voice Agent FINAL FIXED ✅\n\n"
+        f"🚀 Abbas AI - Day 8 REAL Human Voice + Designed UI FINAL FIXED ✅\n\n"
         f"👋 Salam bro! Main Abbas Hussain AI!\n"
-        f"Day 7.4 - Human-like Voice + Normal Chat Fixed!\n\n"
+        f"Day 8 - Human-like Voice + Normal Chat Fixed!\n\n"
         f"Commands:\n"
         f"/start - Ye message\n"
         f"/id - Apna ID\n"
@@ -355,12 +459,22 @@ async def ai_command(u, c):
     ans = await call_ai(text, is_voice=False)
     if not ans or len(ans.strip()) == 0:
         ans = "❌ Khali jawab aaya, dobara try kar bro!"
-    # Split if long
-    if len(ans) > 4000:
-        for i in range(0, len(ans), 4000):
-            await u.message.reply_text(ans[i:i+4000])
+    
+    designed = format_designed_response(ans, text)
+    
+    if len(designed) > 4000:
+        for i in range(0, len(designed), 4000):
+            chunk = designed[i:i+4000]
+            if chunk.strip():
+                try:
+                    await u.message.reply_text(chunk, parse_mode='Markdown')
+                except:
+                    await u.message.reply_text(chunk)
     else:
-        await u.message.reply_text(ans)
+        try:
+            await u.message.reply_text(designed, parse_mode='Markdown')
+        except:
+            await u.message.reply_text(designed)
 
 async def agent_command(u, c):
     if not is_owner(u.effective_user.id):
@@ -368,7 +482,7 @@ async def agent_command(u, c):
         return
     goal = " ".join(c.args) if c.args else ""
     if not goal:
-        await u.message.reply_text("Use: /agent <goal>\nExample: /agent README me Day 7.4 section add kar")
+        await u.message.reply_text("Use: /agent <goal>\nExample: /agent README me Day 8 section add kar")
         return
     await agent_loop(goal, u.message)
 
@@ -398,7 +512,7 @@ async def voice_command(u, c):
                 vf = text_to_voice(ans)
                 if vf and os.path.exists(vf):
                     try:
-                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply - Human Style Day 7.4")
+                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply - Human Style Day 8")
                         try:
                             os.remove(vf)
                         except:
@@ -409,7 +523,7 @@ async def voice_command(u, c):
 
     # No text - guide
     await u.message.reply_text(
-        f"🎤 Day 7.4 Voice Agent Guide\n\n"
+        f"🎤 Day 8 Voice Agent Guide\n\n"
         f"Text se:\n"
         f"/voice 30 Terms batao - Voice reply\n"
         f"/voice README me add kar - Agent + Voice\n\n"
@@ -448,7 +562,7 @@ async def run_command(u, c):
         await u.message.reply_text(f"Error: {e}")
 
 async def uptime_command(u, c):
-    await u.message.reply_text(f"⏰ Uptime: {time.time()}\nDay 7.4 Human Voice LIVE! TTS:{HAS_TTS}")
+    await u.message.reply_text(f"⏰ Uptime: {time.time()}\nDay 8 Human Voice LIVE! TTS:{HAS_TTS}")
 
 async def web_command(u, c):
     await u.message.reply_text(f"🌐 Dashboard: {VERCEL_URL}\nFlask: :8080")
@@ -471,7 +585,7 @@ async def backup_command(u, c):
 
 @owner_only
 async def gitpush_command(u, c):
-    msg = " ".join(c.args) if c.args else "Update by Abbas AI Day 7.4"
+    msg = " ".join(c.args) if c.args else "Update by Abbas AI Day 8"
     try:
         subprocess.run("git add .", shell=True, timeout=10)
         subprocess.run(f'git commit -m "{msg}"', shell=True, timeout=10)
@@ -484,7 +598,7 @@ async def gitpush_command(u, c):
         await u.message.reply_text(f"Push error: {e}")
 
 async def ping_command(u, c):
-    await u.message.reply_text("🏓 Pong! Day 7.4 Human Voice LIVE!")
+    await u.message.reply_text("🏓 Pong! Day 8 Human Voice LIVE!")
 
 async def help_command(u, c):
     await u.message.reply_text("/start /id /ai /agent /voice /battery /ls /run /uptime /web /deploy /backup /gitpush /ping /help /kingff")
@@ -492,36 +606,43 @@ async def help_command(u, c):
 async def kingff_command(u, c):
     await u.message.reply_text("👑 KingFF Bot - From KingFF Faucet to Voice Agent! Journey: Termux -> Fly.io -> bot-hosting.net -> Wispbyte -> Vercel Dashboard LIVE! Built by AbbasFullstack 16yo Islamabad!")
 
-# === NORMAL TEXT HANDLER - FIX FOR 30 TERMS ===
+# === DAY 8: DESIGNED RESPONSE + REAL HUMAN VOICE ===
 async def handle_text(u, c):
     text = u.message.text.strip()
     if not text or len(text) < 2:
         return
-    # Avoid empty
     await u.message.reply_chat_action("typing")
     ans = await call_ai(text, is_voice=False)
     if not ans or len(ans.strip()) == 0:
         ans = "Bro samajh gaya! Bolo kya chahiye? 30 terms? Full Stack terms? Batao!"
-    # Fix empty message error
-    if len(ans.strip()) == 0:
-        ans = "Yaar jawab khali aaya, dobara pucho bro!"
     
-    if len(ans) > 4000:
-        for i in range(0, len(ans), 4000):
-            chunk = ans[i:i+4000]
+    # Day 8: Designed response
+    designed = format_designed_response(ans, text)
+    
+    if len(designed) > 4000:
+        for i in range(0, len(designed), 4000):
+            chunk = designed[i:i+4000]
             if chunk.strip():
-                await u.message.reply_text(chunk)
+                await u.message.reply_text(chunk, parse_mode='Markdown')
     else:
-        await u.message.reply_text(ans)
+        # Try markdown, fallback to plain
+        try:
+            await u.message.reply_text(designed, parse_mode='Markdown')
+        except:
+            await u.message.reply_text(designed)
+
+async def handle_text_with_voice_button(u, c):
+    """Same as handle_text but also offers voice"""
+    await handle_text(u, c)
 
 async def handle_voice(u, c):
     try:
-        await u.message.reply_text("🎤 Voice message mili! Transcribe kar raha hun... Day 7.4 me Whisper API optional hai, demo voice bhej raha hun!")
+        await u.message.reply_text("🎤 Voice message mili! Transcribe kar raha hun... Day 8 me Whisper API optional hai, demo voice bhej raha hun!")
         if HAS_TTS:
-            demo = "Bro voice message receive ho gayi hai! Day 7.4 Human Voice Agent live hai! Ab normal text bhi kaam karega jaise 30 terms batao, aur voice bhi human jaisi ayegi! KingFF se leke Voice Agent tak ka safar!"
+            demo = "Bro voice message receive ho gayi hai! Day 8 REAL Human Voice + Designed UI live hai! Ab normal text bhi kaam karega jaise 30 terms batao, aur voice bhi human jaisi ayegi! KingFF se leke Voice Agent tak ka safar!"
             vf = text_to_voice(demo)
             if vf and os.path.exists(vf):
-                await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Day 7.4 Voice Reply")
+                await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Day 8 Voice Reply")
                 try:
                     os.remove(vf)
                 except:
@@ -532,7 +653,7 @@ async def handle_voice(u, c):
 # === MAIN ===
 async def main():
     Thread(target=run_flask, daemon=True).start()
-    print(f"✅ Abbas AI ONLINE - Day 7.4 Human Voice Agent - Python {sys.version.split()[0]}")
+    print(f"✅ Abbas AI ONLINE - Day 8 REAL Human Voice + Designed UI - Python {sys.version.split()[0]}")
     print(f"🌐 Flask :8080 | Vercel {VERCEL_URL} | Wispbyte | TTS {HAS_TTS} | Voice Agent LIVE 🎤")
 
     app = Application.builder().token(BOT_TOKEN).build()
@@ -561,7 +682,7 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
-    print("🤖 Polling started - Day 7.4 Human Voice Ready!")
+    print("🤖 Polling started - Day 8 Human Voice Ready!")
     # Keep alive
     while True:
         await asyncio.sleep(3600)
