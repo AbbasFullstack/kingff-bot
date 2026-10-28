@@ -19,7 +19,7 @@ try:
 except:
     pass
 
-print("🔧 Abbas AI Day 9 Sandbox Terminal + Real Human Voice Loading...")
+print("🔧 Abbas AI Day 9.1 Emotional Voice + Hot Update + Real Human Voice Loading...")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AI_KEY = os.getenv("AI_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
@@ -201,15 +201,76 @@ def clean_for_speech(text):
     return text.strip()
 
 async def text_to_voice_edge(text, filename="voice_reply.mp3"):
+    """DAY 9.1: REAL Emotional Human Voice - Laugh, Serious, Excited!"""
     try:
         clean_text = clean_for_speech(text)
         if not clean_text or len(clean_text.strip()) < 3:
             clean_text = "Bro, kaam ho gaya hai, check kar lo!"
-        voice = "en-US-GuyNeural"
-        communicate = edge_tts.Communicate(clean_text, voice)
-        await communicate.save(filename)
-        print(f"✅ Edge-TTS saved: {filename}")
-        return filename
+        
+        # === EMOTION DETECTION ===
+        lower = clean_text.lower()
+        # Detect emotion
+        is_funny = any(w in lower for w in ['haha', 'hehe', 'lol', '😂', '🤣', 'maza', 'mast', 'awesome', 'great job', 'wah', 'hahaha'])
+        is_excited = any(w in lower for w in ['🔥', '🚀', 'awesome', 'amazing', 'wow', 'great', 'badhiya', 'zabardast', 'mubarak', 'congrats'])
+        is_sad = any(w in lower for w in ['sad', 'sorry', 'galti', 'error', 'fail', 'problem', 'afsoos', 'maafi'])
+        is_serious = any(w in lower for w in ['important', 'warning', 'dhyaan', 'careful', 'error', 'blocked', 'security', 'danger'])
+        is_friendly = any(w in lower for w in ['yaar', 'bro', 'dekho', 'bhai', 'dost', 'suno'])
+        
+        # Choose voice and style based on emotion
+        # en-US-AriaNeural has best emotions: cheerful, excited, friendly, sad, angry, hopeful, etc
+        # en-US-JennyNeural also good
+        voice = "en-US-AriaNeural"  # Best for emotions
+        
+        if is_funny:
+            style = "cheerful"
+            rate = "+10%"
+            pitch = "+5%"
+        elif is_excited:
+            style = "excited"
+            rate = "+15%"
+            pitch = "+8%"
+        elif is_sad:
+            style = "sad"
+            rate = "-10%"
+            pitch = "-5%"
+        elif is_serious:
+            style = "serious"
+            rate = "-5%"
+            pitch = "-2%"
+        elif is_friendly:
+            style = "friendly"
+            rate = "+5%"
+            pitch = "+2%"
+        else:
+            style = "chat"  # Natural conversational
+            rate = "+5%"
+            pitch = "+0%"
+        
+        # Build SSML with emotions - Real Human Style!
+        # SSML for Edge-TTS with expressive styles
+        ssml = f"""<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
+    <voice name="{voice}">
+        <mstts:express-as style="{style}">
+            <prosody rate="{rate}" pitch="{pitch}">
+                {clean_text}
+            </prosody>
+        </mstts:express-as>
+    </voice>
+</speak>"""
+        
+        # Try with SSML first
+        try:
+            communicate = edge_tts.Communicate(ssml, voice)
+            await communicate.save(filename)
+            print(f"✅ Edge-TTS Emotional: {style} | {voice} | {filename}")
+            return filename
+        except Exception as e:
+            print(f"SSML failed: {e}, trying plain text with emotion voice")
+            # Fallback to plain text but with emotional voice
+            communicate = edge_tts.Communicate(clean_text, voice)
+            await communicate.save(filename)
+            return filename
+            
     except Exception as e:
         print(f"Edge-TTS error: {e}")
         try:
@@ -219,6 +280,21 @@ async def text_to_voice_edge(text, filename="voice_reply.mp3"):
             return filename
         except:
             return None
+
+def detect_emotion_for_log(text):
+    """For logging what emotion was used"""
+    lower = text.lower()
+    if any(w in lower for w in ['haha', 'lol', '😂', 'maza']):
+        return "😂 Cheerful/Laugh"
+    elif any(w in lower for w in ['🔥', '🚀', 'awesome', 'wow']):
+        return "🚀 Excited"
+    elif any(w in lower for w in ['sad', 'sorry', 'error']):
+        return "😢 Sad"
+    elif any(w in lower for w in ['important', 'warning']):
+        return "🧐 Serious"
+    else:
+        return "😊 Friendly/Chat"
+
 
 def text_to_voice_sync(text, filename="voice_reply.mp3"):
     try:
@@ -291,7 +367,7 @@ app_flask = Flask(__name__)
 
 @app_flask.route('/')
 def home():
-    return f"Abbas AI Day 9 Sandbox Terminal + Real Human Voice LIVE! TTS:{HAS_TTS} | {datetime.now()}"
+    return f"Abbas AI Day 9.1 Emotional Voice + Hot Update + Real Human Voice LIVE! TTS:{HAS_TTS} | {datetime.now()}"
 
 @app_flask.route('/health')
 def health():
@@ -478,7 +554,7 @@ RULES:
 # === COMMANDS ===
 async def start_command(u, c):
     await u.message.reply_text(
-        f"🚀 Abbas AI - Day 9 Sandbox Terminal + Real Human Voice FINAL FIXED ✅\n\n"
+        f"🚀 Abbas AI - Day 9.1 Emotional Voice + Hot Update + Real Human Voice FINAL FIXED ✅\n\n"
         f"👋 Salam bro! Main Abbas Hussain AI!\n"
         f"Day 9 - Human-like Voice + Normal Chat Fixed!\n\n"
         f"Commands:\n"
@@ -661,7 +737,7 @@ async def terminal_command(u, c):
     cmd = " ".join(c.args) if c.args else ""
     if not cmd:
         await u.message.reply_text(
-            "💻 *Day 9 Sandbox Terminal*\n"
+            "💻 *Day 9.1 Emotional Voice + Hot Update*\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "Use: /terminal <command>\n"
             "/shell <command>\n"
@@ -695,6 +771,88 @@ async def terminal_command(u, c):
             await u.message.reply_text(f"```\n{output}\n```", parse_mode='Markdown')
     except:
         await u.message.reply_text(output[:4000])
+
+
+async def update_command(u, c):
+    """Day 9.1: Direct bot.py update without GitHub - Hot Update!"""
+    if not is_owner(u.effective_user.id):
+        await u.message.reply_text("❌ Owner only!")
+        return
+    await u.message.reply_text(
+        "🔥 *Day 9.1 HOT UPDATE - GitHub jaye bina!*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "*Method 1: Quick Fix (Echo)*\n"
+        "`/terminal echo \"print(\\\"hello\\\")\" > test.py`\n\n"
+        "*Method 2: Full File Update (Base64)*\n"
+        "1. Code ko base64 encode karo: https://base64encode.org\n"
+        "2. Phir:\n"
+        "`/terminal echo <base64> | base64 -d > bot.py`\n\n"
+        "*Method 3: Direct Download (Best!)*\n"
+        "Gist ya GitHub raw URL se:\n"
+        "`/terminal curl -sL https://raw.githubusercontent.com/AbbasFullstack/kingff-bot/main/bot.py -o bot.py && ls -lh bot.py`\n\n"
+        "*Method 4: Git Pull (Recommended)*\n"
+        "`/deploy` → Git se latest pull!\n\n"
+        "*Method 5: Upload Document*\n"
+        "File bhejo Telegram pe as document → /terminal me `ls` → `cat file`\n\n"
+        "💡 *Fastest for you:*\n"
+        "Main tujhe direct command dunga, tu bas `/terminal` me paste karna!",
+        parse_mode='Markdown'
+    )
+
+async def hotfix_command(u, c):
+    """Quick hotfix - example commands"""
+    if not is_owner(u.effective_user.id):
+        return
+    cmd = " ".join(c.args) if c.args else ""
+    if not cmd:
+        await u.message.reply_text(
+            "🔧 *Hotfix Commands*\n\n"
+            "`/hotfix voice cheerful` - Test cheerful voice\n"
+            "`/hotfix voice sad` - Test sad voice\n"
+            "`/hotfix voice excited` - Test excited voice\n"
+            "`/hotfix update_bot <url>` - Download bot.py from URL\n"
+            "`/hotfix restart` - Restart bot (via Wispbyte panel)\n",
+            parse_mode='Markdown'
+        )
+        return
+    
+    if cmd.startswith('voice'):
+        # Test voice emotions
+        emotion = cmd.split('voice')[-1].strip()
+        test_texts = {
+            'cheerful': "Hahaha bro! Wah kya baat hai! Maza aa gaya! Full stack engineer ban gaye! 😂🔥",
+            'excited': "Wow bro! Zabardast! Day 9 complete ho gaya! Terminal LIVE hai! 🚀🔥💯",
+            'sad': "Sorry bro, thoda error aa gaya tha, lekin ab fix kar diya hai, afsoos mat karo...",
+            'serious': "Dhyaan se suno bro, yeh security ka mamla hai, important hai, carefully karna.",
+            'friendly': "Arre yaar bro, dekho aise karte hain, simple hai, main samjha deta hun, tension nahi!"
+        }
+        test_text = test_texts.get(emotion, test_texts['friendly'])
+        await u.message.reply_text(f"🎤 Testing voice: {emotion}\nText: {test_text}")
+        try:
+            vf = await text_to_voice_edge(test_text, f"test_{emotion}.mp3")
+            if vf:
+                await u.message.reply_voice(open(vf, 'rb'), caption=f"🎤 {emotion} - {detect_emotion_for_log(test_text)}")
+                import os
+                try:
+                    os.remove(vf)
+                except:
+                    pass
+        except Exception as e:
+            await u.message.reply_text(f"Voice test error: {e}")
+    
+    elif cmd.startswith('update_bot'):
+        parts = cmd.split()
+        if len(parts) >= 2:
+            url = parts[1]
+            await u.message.reply_text(f"📥 Downloading bot.py from: {url}")
+            output, code = run_shell_command(f"curl -sL {url} -o bot.py && wc -l bot.py && head -20 bot.py", timeout=15)
+            await u.message.reply_text(f"```\n{output[:3500]}\n```", parse_mode='Markdown')
+        else:
+            await u.message.reply_text("Use: /hotfix update_bot <url>")
+    
+    elif cmd == 'restart':
+        await u.message.reply_text("🔄 Wispbyte panel me jaake Restart dabao - Auto restart yahan se nahi hota security ke liye!")
+
 
 async def shell_command(u, c):
     await terminal_command(u, c)
@@ -733,7 +891,7 @@ async def handle_voice(u, c):
     try:
         await u.message.reply_text("🎤 Voice message mili! Transcribe kar raha hun... Day 9 me Whisper API optional hai, demo voice bhej raha hun!")
         if HAS_TTS:
-            demo = "Bro voice message receive ho gayi hai! Day 9 Sandbox Terminal + Real Human Voice live hai! Ab normal text bhi kaam karega jaise 30 terms batao, aur voice bhi human jaisi ayegi! KingFF se leke Voice Agent tak ka safar!"
+            demo = "Bro voice message receive ho gayi hai! Day 9.1 Emotional Voice + Hot Update + Real Human Voice live hai! Ab normal text bhi kaam karega jaise 30 terms batao, aur voice bhi human jaisi ayegi! KingFF se leke Voice Agent tak ka safar!"
             vf = text_to_voice(demo)
             if vf and os.path.exists(vf):
                 await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Day 9 Voice Reply")
@@ -747,7 +905,7 @@ async def handle_voice(u, c):
 # === MAIN ===
 async def main():
     Thread(target=run_flask, daemon=True).start()
-    print(f"✅ Abbas AI ONLINE - Day 9 Sandbox Terminal + Real Human Voice - Python {sys.version.split()[0]}")
+    print(f"✅ Abbas AI ONLINE - Day 9.1 Emotional Voice + Hot Update + Real Human Voice - Python {sys.version.split()[0]}")
     print(f"🌐 Flask :8080 | Vercel {VERCEL_URL} | Wispbyte | TTS {HAS_TTS} | Voice Agent LIVE 🎤")
 
     app = Application.builder().token(BOT_TOKEN).build()
@@ -760,6 +918,8 @@ async def main():
     app.add_handler(CommandHandler("terminal", terminal_command))
     app.add_handler(CommandHandler("shell", shell_command))
     app.add_handler(CommandHandler("exec", exec_command))
+    app.add_handler(CommandHandler("update", update_command))
+    app.add_handler(CommandHandler("hotfix", hotfix_command))
     app.add_handler(CommandHandler("battery", battery_command))
     app.add_handler(CommandHandler("ls", ls_command))
     app.add_handler(CommandHandler("run", run_command))
