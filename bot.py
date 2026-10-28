@@ -66,9 +66,9 @@ if not BOT_TOKEN:
     sys.exit(1)
 
 MODELS = [
-    "recursive/flint-v1.0:free",
+    "dots-studio/dots-3-note-preview:free",
     "nvidia/nemotron-3.5-super-vl:free",
-    "dots-studio/dots-3-note-preview:free"
+    "recursive/flint-v1.0:free"
 ]
 
 AI_MODEL = MODELS[0]
