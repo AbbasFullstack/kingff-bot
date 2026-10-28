@@ -84,7 +84,23 @@ async def call_ai(prompt, is_voice=False):
     if is_voice:
         system_prompt = "You are Abbas Hussain AI, 16yo Full Stack Engineer from Islamabad. Speak like REAL human friend - Roman Urdu + English mix, natural, warm. For VOICE: talk face-to-face, use natural pauses. No stars or markdown for voice. Keep under 3000 chars. Make it fun!"
     else:
-        system_prompt = "You are Abbas Hussain AI, Full Stack Engineer, friendly, Roman Urdu + English mix. Inside Telegram bot KingFF Bot. Built by AbbasFullstack, 16yo Islamabad. Helpful, concise. Use markdown when needed. If list like 30 terms, give clean numbered list: Term = Meaning - Explanation"
+        system_prompt = """You are Abbas Hussain AI - MIRA STYLE CLONE - 16yo Full Stack Engineer, Islamabad.
+CRITICAL FORMATTING RULES (Mira style):
+1. When user asks 30 Terms - ALWAYS return ONE term per line, like:
+1) AI - Artificial Intelligence - Machine ko smart banaya jata hai
+2) API - Application Programming Interface - Apps ek dusre se baat karte hain
+NEVER return all terms in one line!
+2. For advanced features - Use Mira catalog style:
+1) Terminal (remote shell)
+   • Kya: user ko restricted shell...
+   • Kyun: debugging...
+   • Kaise: containerized...
+   • Security: never expose host...
+3. For code/commands - Use code blocks with language
+4. Use bullet points •, bold for headings, clean spacing
+5. No excessive *** or ___ 
+6. Roman Urdu + English mix, friendly, concise"""
+
     msgs = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
     for model in MODELS:
         try:
@@ -103,66 +119,104 @@ async def call_ai(prompt, is_voice=False):
 
 # === DAY 10: SMART PARSER + DESIGNED UI ===
 def parse_terms_from_text(text):
+    """MIRA STYLE - Perfect term parser"""
     terms = []
-    pattern = r'(?:^|\n|\s)(\d+)\.\s*([^\n,]+?)\s*[\-\-\—]\s*([^\n]+?)(?=\s*\d+\.\s*|\Z)'
-    matches = re.findall(pattern, text, re.DOTALL)
-    if matches:
-        for num, term, desc in matches:
-            terms.append((num.strip(), term.strip()[:60], desc.strip()[:150]))
-    else:
-        parts = re.split(r'\s*\d+\.\s*', text)
-        if len(parts) > 5:
-            for i, part in enumerate(parts[1:], start=1):
-                if not part.strip():
-                    continue
-                if '–' in part:
-                    term, desc = part.split('–', 1)
-                elif ' - ' in part:
-                    term, desc = part.split(' - ', 1)
-                elif '-' in part:
-                    term, desc = part.split('-', 1)
-                else:
-                    term = part[:30]
-                    desc = part[30:120]
-                terms.append((str(i), term.strip()[:60], desc.strip()[:150]))
+    # Clean markdown mess
+    text = text.replace('**', '').replace('* *', ' ').strip()
+    # Pattern 1: 1. AI = Artificial Intelligence - Machine...
+    # The AI is returning all in one line like "*1. AI = ... *2. API = ..."
+    # Split by pattern like *2. or 2.
+    # First, normalize: replace "*2." with "\n2."
+    text_norm = re.sub(r'\s*\*?(\d+)\.\s*\*?', r'\n\1. ', text)
+    lines = text_norm.split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Match: 1. AI = Artificial... or 1. Backend = Server - side - Data...
+        m = re.match(r'^(\d+)\.\s*(.+?)\s*=\s*(.+)$', line)
+        if m:
+            num, term, desc = m.groups()
+            # Clean L- symbol
+            desc = desc.replace('└─', '').replace('L-', '').replace('|__', '').strip()
+            # Remove trailing *2. etc that got merged
+            desc = re.split(r'\s*\*?\d+\.\s*', desc)[0]
+            terms.append((num.strip(), term.strip()[:50], desc.strip()[:200]))
+        else:
+            # Try: 1. Term - Definition
+            m2 = re.match(r'^(\d+)\.\s*(.+?)\s*-\s*(.+)$', line)
+            if m2:
+                num, term, desc = m2.groups()
+                terms.append((num.strip(), term.strip()[:50], desc.strip()[:200]))
     return terms
 
+
 def format_designed_response(text, query=""):
+    """MIRA STYLE - Best Design, no bekar formatting"""
     if not text or len(text.strip()) == 0:
         return "Khali jawab, dobara try karo!"
     lower_q = (query.lower() if query else "")
     lower_t = text.lower()
-    is_terms = any(k in lower_q or k in lower_t for k in ["30 terms", "full stack terms", "terms batao", "frontend"])
+    
+    # === MIRA STYLE FOR 30 TERMS ===
+    is_terms = any(k in lower_q or k in lower_t for k in ["30 terms", "full stack terms", "terms batao", "frontend", "mira"])
     if is_terms:
         terms = parse_terms_from_text(text)
-        if len(terms) >= 5:
-            designed = "📚 *30 Full Stack Terms - Abbas AI*\n"
-            designed += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        if len(terms) >= 3:
+            # Mira style: Compact, bullet points, bold headings
+            designed = "📚 *30 Full Stack Terms*\n\n"
             for num, term, desc in terms[:30]:
-                term_clean = term.strip().rstrip(',').rstrip('.')
-                desc_clean = desc.strip().rstrip(',').rstrip('.')
-                desc_clean = re.sub(r',\s*\d+\.$', '', desc_clean)
-                designed += f"*{num}. {term_clean}*\n"
-                designed += f"   └─ {desc_clean}\n\n"
-            designed += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            designed += "💡 *Interview Tip:* Yaad kar lo bro!\n"
-            designed += "🎤 Voice: /voice 30 Terms batao\n"
-            designed += "👨‍💻 AbbasFullstack (16yo, Islamabad)"
+                term_clean = term.strip()
+                desc_clean = desc.strip()
+                # Mira style: 1) Term (bold) - definition
+                designed += f"*{num}) {term_clean}*\n"
+                designed += f"   • {desc_clean}\n\n"
+            designed += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            designed += "💡 *Tip:* Interview me kaam ayega!\n"
             return designed
         else:
-            pretty = re.sub(r'\s*(\d+)\.\s*', r'\n\n*\1. ', text)
-            designed = "📚 *30 Full Stack Terms*\n"
-            designed += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            designed += pretty
-            designed += "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━"
+            # Fallback: Clean the messy text
+            clean = text.replace('**', '').replace('└─', '').replace('L─', '')
+            clean = re.sub(r'\s*\*(\d+)\.', r'\n\n*\1.', clean)
+            clean = re.sub(r'\n{3,}', '\n\n', clean)
+            designed = "📚 *30 Full Stack Terms*\n\n" + clean[:3500]
             return designed
-    if len(text) > 400:
-        designed = "💬 *Abbas AI Reply*\n"
-        designed += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        designed += text
-        designed += "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    # === MIRA STYLE FOR ADVANCED FEATURES / GENERAL ===
+    if any(k in lower_q for k in ["advance feature", "terminal", "browser access", "agent"]):
+        # Mira style catalog
+        # Check if already in Mira format (has "Kya:", "Kyun:", "Kaise:")
+        if "Kya:" in text or "Kyun:" in text:
+            # Already Mira-like, just clean and format
+            designed = text
+            designed = designed.replace('•', '  •')
+            return designed[:4000]
+    
+    # === MIRA STYLE FOR OPENROUTER LIMIT / CODE ===
+    if "rate_limit" in lower_t or "curl" in lower_t or "API_KEY" in text:
+        # This is code - format with proper code blocks + explanations
+        # Extract parts
+        designed = "🔍 *OpenRouter API Limit Check*\n\n"
+        designed += text[:3500]
+        # Ensure code blocks have language
+        designed = designed.replace('```bash', '```bash\n').replace('```python', '```python\n').replace('```js', '```javascript\n')
         return designed
+    
+    # === MIRA STYLE FOR TERMINAL ===
+    if "total" in lower_t and "drwx" in lower_t:
+        # This is ls output, will be handled in terminal_command
+        return text
+    
+    # General: Mira clean style
+    if len(text) > 300:
+        # Clean up the bekar stars
+        clean = text.replace('***', '').replace('___', '')
+        # Limit excessive bold
+        designed = clean[:3500]
+        return designed
+    
     return text
+
 
 def clean_agent_output_for_user(text):
     if not text:
@@ -434,38 +488,42 @@ async def send_typing_animation(message_obj, full_text, delay=0.025):
         except:
             pass
 
-async def animate_thinking_box_smooth(message_obj, query_text, duration=4):
-    """DAY 8.1: Smooth Silver/Black Thinking Box - Untouchable, blinks every 0.8s"""
-    boxes = [
-        ("◼️", "⬛ Thinking..."),
-        ("◻️", "⬜ Thinking..."),
-        ("◼️", "⬛ Soch raha hun..."),
-        ("◻️", "⬜ Processing..."),
-        ("◼️", "⬛ Analyzing..."),
-    ]
+async def animate_thinking_box_smooth(message_obj, query_text, duration=3):
+    """MIRA STYLE Thinking - Clean, small bubble with timer like Mira"""
     try:
         start = asyncio.get_event_loop().time()
         idx = 0
         while asyncio.get_event_loop().time() - start < duration:
-            box, txt = boxes[idx % len(boxes)]
-            other = "◻️" if box == "◼️" else "◼️"
-            # Untouchable silver box design - code block
-            anim_text = (
-                f"{box} *{txt}* {box}\n"
-                f"```\n"
-                f"{other}{other}{other} THINKING {other}{other}{other}\n"
-                f"Query: {query_text[:30]}\n"
-                f"{box*3} {'.' * (idx % 5 + 1)}\n"
-                f"```"
-            )
+            elapsed = int(asyncio.get_event_loop().time() - start)
+            # Mira style: Simple, clean, with timer
+            if idx % 2 == 0:
+                txt = f"🌟 Thinking\n{elapsed}s"
+            else:
+                txt = f"💭 Thinking\n{elapsed}s"
             try:
-                await message_obj.edit_text(anim_text, parse_mode='Markdown')
+                await message_obj.edit_text(txt)
             except:
                 pass
-            await asyncio.sleep(0.8)  # Smooth blink every 0.8s
+            await asyncio.sleep(0.7)
             idx += 1
     except:
         pass
+
+async def send_typing_animation_mira(message_obj, full_text, delay=0.02):
+    """MIRA STYLE - No typing cursor mess, direct clean edit"""
+    try:
+        # Mira doesn't do word-by-word, it types then shows full
+        # We will do: show typing... then final
+        await message_obj.edit_text("🌟 Thinking... 1s")
+        await asyncio.sleep(0.5)
+        # Final clean
+        await message_obj.edit_text(full_text[:4000], parse_mode='Markdown')
+    except:
+        try:
+            await message_obj.edit_text(full_text[:4000])
+        except:
+            pass
+
 
 
 # === COMMANDS ===
