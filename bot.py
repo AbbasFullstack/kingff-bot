@@ -101,10 +101,16 @@ NEVER return all terms in one line!
 5. No excessive *** or ___ 
 6. Roman Urdu + English mix, friendly, concise"""
 
+    # For 30 terms, need more tokens and force newlines
+    is_30_terms = any(k in prompt.lower() for k in ["30 term", "terms batao", "30 full"])
+    max_tok = 4000 if is_30_terms else 2500
+    # Force newlines in prompt
+    if is_30_terms:
+        prompt = prompt + "\n\nIMPORTANT: Return EACH term on NEW LINE, one per line, like:\n1) Term - Definition\n2) Term - Definition\nNever put all in one line!"
     msgs = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
     for model in MODELS:
         try:
-            data = {"model": model, "messages": msgs, "max_tokens": 2500}
+            data = {"model": model, "messages": msgs, "max_tokens": max_tok}
             r = await http_client.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
             if r.status_code == 200:
                 j = r.json()
@@ -121,13 +127,8 @@ NEVER return all terms in one line!
 def parse_terms_from_text(text):
     """MIRA STYLE - Perfect term parser"""
     terms = []
-    # Clean markdown mess
     text = text.replace('**', '').replace('* *', ' ').strip()
-    # Pattern 1: 1. AI = Artificial Intelligence - Machine...
-    # The AI is returning all in one line like "*1. AI = ... *2. API = ..."
-    # Split by pattern like *2. or 2.
-    # First, normalize: replace "*2." with "\n2."
-    text_norm = re.sub(r'\s*\*?(\d+)\.\s*\*?', r'\n\1. ', text)
+    # AI returns all in one line: "1) AI - ... 2) API - ..." - Force split
     lines = text_norm.split('\n')
     for line in lines:
         line = line.strip()
@@ -159,28 +160,34 @@ def format_designed_response(text, query=""):
     lower_t = text.lower()
     
     # === MIRA STYLE FOR 30 TERMS ===
-    is_terms = any(k in lower_q or k in lower_t for k in ["30 terms", "full stack terms", "terms batao", "frontend", "mira"])
+    is_terms = any(k in lower_q or k in lower_t for k in ["30 terms", "full stack terms", "terms batao", "frontend", "mira", "10 terms"])
     if is_terms:
         terms = parse_terms_from_text(text)
         if len(terms) >= 3:
-            # Mira style: Compact, bullet points, bold headings
             designed = "📚 *30 Full Stack Terms*\n\n"
             for num, term, desc in terms[:30]:
                 term_clean = term.strip()
                 desc_clean = desc.strip()
-                # Mira style: 1) Term (bold) - definition
                 designed += f"*{num}) {term_clean}*\n"
                 designed += f"   • {desc_clean}\n\n"
-            designed += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            designed += "💡 *Tip:* Interview me kaam ayega!\n"
+            # If more than 15, split message will handle
+            if len(terms) >= 20:
+                designed += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                designed += f"✅ Total: {len(terms)} terms | Part 1\n"
+            else:
+                designed += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                designed += "💡 *Tip:* Interview me kaam ayega!\n"
             return designed
         else:
-            # Fallback: Clean the messy text
+            # Fallback: Force newlines every " 2) " pattern
             clean = text.replace('**', '').replace('└─', '').replace('L─', '')
-            clean = re.sub(r'\s*\*(\d+)\.', r'\n\n*\1.', clean)
+            # Force newline before number pattern
+            clean = re.sub(r'\s+(\d+)\)\s*', r'\n\n*\1) ', clean)
+            clean = re.sub(r'\s+(\d+)\.\s*', r'\n\n*\1) ', clean)
             clean = re.sub(r'\n{3,}', '\n\n', clean)
-            designed = "📚 *30 Full Stack Terms*\n\n" + clean[:3500]
+            designed = "📚 *30 Full Stack Terms*\n\n" + clean[:3800]
             return designed
+
     
     # === MIRA STYLE FOR ADVANCED FEATURES / GENERAL ===
     if any(k in lower_q for k in ["advance feature", "terminal", "browser access", "agent"]):
@@ -454,39 +461,26 @@ def owner_only(func):
 
 # === DAY 10: CHATGPT ANIMATION ===
 async def send_typing_animation(message_obj, full_text, delay=0.025):
-    """DAY 8.1: ChatGPT Smooth Typing - Single Message Edit + Blinking Cursor"""
+    """DAY 8.3 FIX: No spam typing - Single final edit to avoid rate limit"""
     try:
-        displayed = ""
-        words = full_text.split()
-        # Smoother: 2 words at a time
-        chunk_size = 2
-        for i in range(0, len(words), chunk_size):
-            chunk = " ".join(words[i:i+chunk_size])
-            displayed += chunk + " "
-            # Blinking cursor
-            cursor = "▌" if (i // chunk_size) % 2 == 0 else " "
-            preview = displayed + cursor
-            if len(preview) > 3800:
-                preview = preview[-3800:]
-            try:
-                await message_obj.edit_text(preview)
-            except:
-                try:
-                    await message_obj.edit_text(preview[:4000])
-                except:
-                    pass
-            await asyncio.sleep(delay)
-        # Final without cursor
-        try:
-            await message_obj.edit_text(full_text[:4000], parse_mode='Markdown')
-        except:
-            await message_obj.edit_text(full_text[:4000])
-    except Exception as e:
-        print(f"Typing error: {e}")
+        # No word-by-word spam, just one clean edit - avoids Telegram rate limit
+        await message_obj.edit_text(full_text[:4000], parse_mode='Markdown')
+    except:
         try:
             await message_obj.edit_text(full_text[:4000])
         except:
             pass
+
+async def send_typing_animation_safe(message_obj, full_text):
+    """Safe version - one edit only"""
+    try:
+        await message_obj.edit_text(full_text[:4000], parse_mode='Markdown')
+    except:
+        try:
+            await message_obj.edit_text(full_text[:4000])
+        except Exception as e:
+            print(f"Edit failed: {e}")
+
 
 async def animate_thinking_box_smooth(message_obj, query_text, duration=3):
     """MIRA STYLE Thinking - Clean, small bubble with timer like Mira"""
