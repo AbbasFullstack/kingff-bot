@@ -399,18 +399,21 @@ def owner_only(func):
     return wrapper
 
 # === DAY 10: CHATGPT ANIMATION ===
-async def send_typing_animation(message_obj, full_text, delay=0.03):
+async def send_typing_animation(message_obj, full_text, delay=0.025):
+    """DAY 8.1: ChatGPT Smooth Typing - Single Message Edit + Blinking Cursor"""
     try:
         displayed = ""
         words = full_text.split()
-        chunk_size = 3
+        # Smoother: 2 words at a time
+        chunk_size = 2
         for i in range(0, len(words), chunk_size):
             chunk = " ".join(words[i:i+chunk_size])
             displayed += chunk + " "
-            cursor = "▌" if i % 2 == 0 else " "
+            # Blinking cursor
+            cursor = "▌" if (i // chunk_size) % 2 == 0 else " "
             preview = displayed + cursor
-            if len(preview) > 3500:
-                preview = preview[-3500:]
+            if len(preview) > 3800:
+                preview = preview[-3800:]
             try:
                 await message_obj.edit_text(preview)
             except:
@@ -419,16 +422,51 @@ async def send_typing_animation(message_obj, full_text, delay=0.03):
                 except:
                     pass
             await asyncio.sleep(delay)
+        # Final without cursor
         try:
             await message_obj.edit_text(full_text[:4000], parse_mode='Markdown')
         except:
             await message_obj.edit_text(full_text[:4000])
     except Exception as e:
-        print(f"Typing animation error: {e}")
+        print(f"Typing error: {e}")
         try:
             await message_obj.edit_text(full_text[:4000])
         except:
             pass
+
+async def animate_thinking_box_smooth(message_obj, query_text, duration=4):
+    """DAY 8.1: Smooth Silver/Black Thinking Box - Untouchable, blinks every 0.8s"""
+    boxes = [
+        ("◼️", "⬛ Thinking..."),
+        ("◻️", "⬜ Thinking..."),
+        ("◼️", "⬛ Soch raha hun..."),
+        ("◻️", "⬜ Processing..."),
+        ("◼️", "⬛ Analyzing..."),
+    ]
+    try:
+        start = asyncio.get_event_loop().time()
+        idx = 0
+        while asyncio.get_event_loop().time() - start < duration:
+            box, txt = boxes[idx % len(boxes)]
+            other = "◻️" if box == "◼️" else "◼️"
+            # Untouchable silver box design - code block
+            anim_text = (
+                f"{box} *{txt}* {box}\n"
+                f"```\n"
+                f"{other}{other}{other} THINKING {other}{other}{other}\n"
+                f"Query: {query_text[:30]}\n"
+                f"{box*3} {'.' * (idx % 5 + 1)}\n"
+                f"```"
+            )
+            try:
+                await message_obj.edit_text(anim_text, parse_mode='Markdown')
+            except:
+                pass
+            await asyncio.sleep(0.8)  # Smooth blink every 0.8s
+            idx += 1
+    except:
+        pass
+
 
 # === COMMANDS ===
 async def start_command(u, c):
