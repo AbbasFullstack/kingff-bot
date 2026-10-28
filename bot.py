@@ -19,7 +19,7 @@ try:
 except:
     pass
 
-print("🔧 Abbas AI Day 8.1 Designed + Real Human Voice Loading...")
+print("🔧 Abbas AI Day 9 Sandbox Terminal + Real Human Voice Loading...")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AI_KEY = os.getenv("AI_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
@@ -233,13 +233,65 @@ def text_to_voice_sync(text, filename="voice_reply.mp3"):
 def text_to_voice(text, filename="voice_reply.mp3"):
     return text_to_voice_sync(text, filename)
 
+# === DAY 9: SANDBOX TERMINAL - SECURE SHELL ===
+TERMINAL_BLACKLIST = [
+    'rm -rf /', 'rm -rf /*', ':(){:|:&};:', 'mkfs', 'dd if=', '>/dev/sda',
+    'shutdown', 'reboot', 'poweroff', 'halt',
+    'sudo rm', 'sudo mkfs', 'chmod 777 /', 'chown -R', 'mv / /*',
+    'curl | sh', 'wget | sh', 'bash -i', 'nc -l',
+    '> /etc/passwd', '> /etc/shadow', 'fork bomb', 'while true; do',
+    'rm -rf ~', 'rm -rf /home', 'rm -rf /root'
+]
+
+def is_safe_command(cmd):
+    lower = cmd.lower().strip()
+    for bad in TERMINAL_BLACKLIST:
+        if bad.lower() in lower:
+            return False, f"Blocked: {bad}"
+    if lower.startswith('sudo ') and any(x in lower for x in ['rm', 'mkfs', 'dd', 'chmod', 'chown', 'mv']):
+        return False, "Sudo destructive blocked"
+    if '>' in lower and any(x in lower for x in ['/etc/', '/dev/', '/boot/', '/proc/', '/sys/']):
+        return False, "Redirect to system path blocked"
+    return True, "OK"
+
+def run_shell_command(cmd, timeout=15):
+    import subprocess
+    is_safe, reason = is_safe_command(cmd)
+    if not is_safe:
+        return f"❌ Blocked: {reason}\nCommand: {cmd}", 1
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, cwd=os.getcwd())
+        output = ""
+        if result.stdout:
+            output += result.stdout
+        if result.stderr:
+            output += "\n[stderr]\n" + result.stderr
+        if not output:
+            output = f"✅ Executed (exit {result.returncode}) - No output"
+        else:
+            output = f"$ {cmd}\n━━━━━━━━━━━━━━━━━━━━━━━━━\n{output}\n━━━━━━━━━━━━━━━━━━━━━━━━━\nExit: {result.returncode}"
+        if len(output) > 3500:
+            output = output[:3500] + f"\n... truncated"
+        return output, result.returncode
+    except Exception as e:
+        return f"❌ Error: {e}", 1
+
+def terminal_tool_for_agent_sync(command, explanation=""):
+    out, code = run_shell_command(command, timeout=15)
+    return f"Terminal: {command} -> Exit {code}: {out[:2000]}"
+
+async def terminal_tool_for_agent(command, explanation=""):
+    return terminal_tool_for_agent_sync(command, explanation)
+
+
+
 # === FLASK ===
 # === FLASK ===
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
 def home():
-    return f"Abbas AI Day 8.1 Designed + Real Human Voice LIVE! TTS:{HAS_TTS} | {datetime.now()}"
+    return f"Abbas AI Day 9 Sandbox Terminal + Real Human Voice LIVE! TTS:{HAS_TTS} | {datetime.now()}"
 
 @app_flask.route('/health')
 def health():
@@ -267,7 +319,7 @@ def owner_only(func):
 async def agent_loop(goal, message):
     """Autonomous agent that does file tasks"""
     try:
-        await message.reply_text(f"🤖 Abbas Agent Day 8.1 Activated!\n🎯 Goal: {goal}\n🧠 Planning...")
+        await message.reply_text(f"🤖 Abbas Agent Day 9 Activated!\n🎯 Goal: {goal}\n🧠 Planning...")
         
         # Get file list for context
         try:
@@ -426,9 +478,9 @@ RULES:
 # === COMMANDS ===
 async def start_command(u, c):
     await u.message.reply_text(
-        f"🚀 Abbas AI - Day 8.1 Designed + Real Human Voice FINAL FIXED ✅\n\n"
+        f"🚀 Abbas AI - Day 9 Sandbox Terminal + Real Human Voice FINAL FIXED ✅\n\n"
         f"👋 Salam bro! Main Abbas Hussain AI!\n"
-        f"Day 8.1 - Human-like Voice + Normal Chat Fixed!\n\n"
+        f"Day 9 - Human-like Voice + Normal Chat Fixed!\n\n"
         f"Commands:\n"
         f"/start - Ye message\n"
         f"/id - Apna ID\n"
@@ -477,7 +529,7 @@ async def agent_command(u, c):
         return
     goal = " ".join(c.args) if c.args else ""
     if not goal:
-        await u.message.reply_text("Use: /agent <goal>\nExample: /agent README me Day 8.1 section add kar")
+        await u.message.reply_text("Use: /agent <goal>\nExample: /agent README me Day 9 section add kar")
         return
     await agent_loop(goal, u.message)
 
@@ -507,7 +559,7 @@ async def voice_command(u, c):
                 vf = text_to_voice(ans)
                 if vf and os.path.exists(vf):
                     try:
-                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply - Human Style Day 8.1")
+                        await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Voice Reply - Human Style Day 9")
                         try:
                             os.remove(vf)
                         except:
@@ -518,7 +570,7 @@ async def voice_command(u, c):
 
     # No text - guide
     await u.message.reply_text(
-        f"🎤 Day 8.1 Voice Agent Guide\n\n"
+        f"🎤 Day 9 Voice Agent Guide\n\n"
         f"Text se:\n"
         f"/voice 30 Terms batao - Voice reply\n"
         f"/voice README me add kar - Agent + Voice\n\n"
@@ -557,7 +609,7 @@ async def run_command(u, c):
         await u.message.reply_text(f"Error: {e}")
 
 async def uptime_command(u, c):
-    await u.message.reply_text(f"⏰ Uptime: {time.time()}\nDay 8.1 Human Voice LIVE! TTS:{HAS_TTS}")
+    await u.message.reply_text(f"⏰ Uptime: {time.time()}\nDay 9 Human Voice LIVE! TTS:{HAS_TTS}")
 
 async def web_command(u, c):
     await u.message.reply_text(f"🌐 Dashboard: {VERCEL_URL}\nFlask: :8080")
@@ -580,7 +632,7 @@ async def backup_command(u, c):
 
 @owner_only
 async def gitpush_command(u, c):
-    msg = " ".join(c.args) if c.args else "Update by Abbas AI Day 8.1"
+    msg = " ".join(c.args) if c.args else "Update by Abbas AI Day 9"
     try:
         subprocess.run("git add .", shell=True, timeout=10)
         subprocess.run(f'git commit -m "{msg}"', shell=True, timeout=10)
@@ -593,13 +645,63 @@ async def gitpush_command(u, c):
         await u.message.reply_text(f"Push error: {e}")
 
 async def ping_command(u, c):
-    await u.message.reply_text("🏓 Pong! Day 8.1 Human Voice LIVE!")
+    await u.message.reply_text("🏓 Pong! Day 9 Human Voice LIVE!")
 
 async def help_command(u, c):
     await u.message.reply_text("/start /id /ai /agent /voice /battery /ls /run /uptime /web /deploy /backup /gitpush /ping /help /kingff")
 
 async def kingff_command(u, c):
     await u.message.reply_text("👑 KingFF Bot - From KingFF Faucet to Voice Agent! Journey: Termux -> Fly.io -> bot-hosting.net -> Wispbyte -> Vercel Dashboard LIVE! Built by AbbasFullstack 16yo Islamabad!")
+
+
+async def terminal_command(u, c):
+    if not is_owner(u.effective_user.id):
+        await u.message.reply_text("❌ Terminal owner only! Security")
+        return
+    cmd = " ".join(c.args) if c.args else ""
+    if not cmd:
+        await u.message.reply_text(
+            "💻 *Day 9 Sandbox Terminal*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Use: /terminal <command>\n"
+            "/shell <command>\n"
+            "/exec <command>\n\n"
+            "✅ *Safe Examples:*\n"
+            "`/terminal ls -la`\n"
+            "`/terminal pwd`\n"
+            "`/terminal cat bot.py | head -20`\n"
+            "`/terminal git status`\n"
+            "`/terminal python3 --version`\n"
+            "`/terminal df -h`\n\n"
+            "❌ *Blocked:* rm -rf /, sudo mkfs\n",
+            parse_mode='Markdown'
+        )
+        return
+    await u.message.reply_chat_action("typing")
+    await u.message.reply_text(f"💻 Executing: `{cmd}`", parse_mode='Markdown')
+    output, code = run_shell_command(cmd, timeout=20)
+    try:
+        if len(output) > 3500:
+            filename = f"terminal_{int(__import__('time').time())}.txt"
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(output)
+            await u.message.reply_document(open(filename, 'rb'), filename=filename, caption=f"💻 Terminal: {cmd} (Exit: {code})")
+            try:
+                import os
+                os.remove(filename)
+            except:
+                pass
+        else:
+            await u.message.reply_text(f"```\n{output}\n```", parse_mode='Markdown')
+    except:
+        await u.message.reply_text(output[:4000])
+
+async def shell_command(u, c):
+    await terminal_command(u, c)
+
+async def exec_command(u, c):
+    await terminal_command(u, c)
+
 
 # === NORMAL TEXT HANDLER - FIX FOR 30 TERMS ===
 async def handle_text(u, c):
@@ -629,12 +731,12 @@ async def handle_text(u, c):
 
 async def handle_voice(u, c):
     try:
-        await u.message.reply_text("🎤 Voice message mili! Transcribe kar raha hun... Day 8.1 me Whisper API optional hai, demo voice bhej raha hun!")
+        await u.message.reply_text("🎤 Voice message mili! Transcribe kar raha hun... Day 9 me Whisper API optional hai, demo voice bhej raha hun!")
         if HAS_TTS:
-            demo = "Bro voice message receive ho gayi hai! Day 8.1 Designed + Real Human Voice live hai! Ab normal text bhi kaam karega jaise 30 terms batao, aur voice bhi human jaisi ayegi! KingFF se leke Voice Agent tak ka safar!"
+            demo = "Bro voice message receive ho gayi hai! Day 9 Sandbox Terminal + Real Human Voice live hai! Ab normal text bhi kaam karega jaise 30 terms batao, aur voice bhi human jaisi ayegi! KingFF se leke Voice Agent tak ka safar!"
             vf = text_to_voice(demo)
             if vf and os.path.exists(vf):
-                await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Day 8.1 Voice Reply")
+                await u.message.reply_voice(open(vf, 'rb'), caption="🎤 Day 9 Voice Reply")
                 try:
                     os.remove(vf)
                 except:
@@ -645,7 +747,7 @@ async def handle_voice(u, c):
 # === MAIN ===
 async def main():
     Thread(target=run_flask, daemon=True).start()
-    print(f"✅ Abbas AI ONLINE - Day 8.1 Designed + Real Human Voice - Python {sys.version.split()[0]}")
+    print(f"✅ Abbas AI ONLINE - Day 9 Sandbox Terminal + Real Human Voice - Python {sys.version.split()[0]}")
     print(f"🌐 Flask :8080 | Vercel {VERCEL_URL} | Wispbyte | TTS {HAS_TTS} | Voice Agent LIVE 🎤")
 
     app = Application.builder().token(BOT_TOKEN).build()
@@ -655,6 +757,9 @@ async def main():
     app.add_handler(CommandHandler("ai", ai_command))
     app.add_handler(CommandHandler("agent", agent_command))
     app.add_handler(CommandHandler("voice", voice_command))
+    app.add_handler(CommandHandler("terminal", terminal_command))
+    app.add_handler(CommandHandler("shell", shell_command))
+    app.add_handler(CommandHandler("exec", exec_command))
     app.add_handler(CommandHandler("battery", battery_command))
     app.add_handler(CommandHandler("ls", ls_command))
     app.add_handler(CommandHandler("run", run_command))
@@ -674,7 +779,7 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
-    print("🤖 Polling started - Day 8.1 Human Voice Ready!")
+    print("🤖 Polling started - Day 9 Human Voice Ready!")
     # Keep alive
     while True:
         await asyncio.sleep(3600)
