@@ -133,35 +133,22 @@ def split_telegram_text(text, limit=2800):
     return chunks or [text[:limit]]
 
 
-async def request_chat_completion(messages, max_tokens, tools=None):
-    """Try configured (free) models with bounded retry and optional structured tools."""
+async def request_chat_completion(messages, max_tokens):
+    """Try configured free models with bounded retry and no provider-specific tool API."""
     saw_rate_limit = False
     for model in MODELS:
         for attempt in range(2):
             try:
-                request_body = {"model": model, "messages": messages, "max_tokens": max_tokens}
-                if tools:
-                    request_body["tools"] = tools
-                    request_body["tool_choice"] = "auto"
                 response = await http_client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {AI_KEY}", "Content-Type": "application/json"},
-                    json=request_body,
+                    json={"model": model, "messages": messages, "max_tokens": max_tokens},
                 )
                 if response.status_code == 200:
                     payload = response.json()
                     choices = payload.get("choices") or []
-                    message = choices[0].get("message", {}) if choices else {}
-                    content = message.get("content")
-                    tool_calls = message.get("tool_calls") or []
-                    if tools is not None:
-                        if tool_calls:
-                            return {"content": content if isinstance(content, str) else "", "tool_calls": tool_calls}, None
-                        if isinstance(content, str) and re.search(r"<\s*(?:dots_function_call|function_call|tool_call)\b", content, re.IGNORECASE):
-                            break
-                        if isinstance(content, str) and content.strip():
-                            return {"content": content, "tool_calls": []}, None
-                    elif isinstance(content, str) and content.strip():
+                    content = choices[0].get("message", {}).get("content") if choices else None
+                    if isinstance(content, str) and content.strip():
                         return content, None
                     break
                 if response.status_code == 429:
@@ -887,12 +874,25 @@ async def agent_command(update, context):
     await agent_loop(goal, update.message)
 
 
-AGENT_TOOL_SCHEMAS = [
-    {"type": "function", "function": {"name": "write_file", "description": "Create or update a text file inside the bot project folder. Use a relative path.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "read_file", "description": "Read a text file inside the bot project folder, excluding secrets.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "list_files", "description": "List ordinary project files while skipping caches, dependencies, and secrets.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
-    {"type": "function", "function": {"name": "git_status", "description": "Read the current Git working-tree status. This does not change files.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
-]
+def parse_agent_action(text):
+    """Extract one allowlisted JSON action from ordinary chat-completion text."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(text[index:])
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        action = payload.get("action")
+        if isinstance(action, str) and action.strip().lower() in {"write_file", "read_file", "list_files", "git_status", "done"}:
+            payload["action"] = action.strip().lower()
+            return payload
+    return None
 
 
 async def animate_agent_thinking(message_obj, stop_event):
@@ -1012,11 +1012,12 @@ async def agent_loop(goal, message, voice_emotion=None):
     stop_animation = asyncio.Event()
     animation_task = asyncio.create_task(animate_agent_thinking(thinking_msg, stop_animation))
     system_prompt = (
-        "You are Abbas AI, a careful coding agent. Complete the user's goal using only the structured tools provided. "
-        "For file tasks, call write_file with a relative project path and full file content; do not claim a file exists until the tool confirms it. "
-        "Use read_file, list_files, or git_status only when useful. Never emit pseudo-tool markup, XML function tags, or raw tool JSON as user-facing text. "
-        "Do not use shell commands, push commits, access secrets, or perform unrelated actions. "
-        "After tools finish, return one concise Roman Urdu/English summary and mention any created relative file path."
+        "You are Abbas AI, a careful coding agent. The provider may not support API function calling, so use this plain-text JSON action protocol. "
+        "Return exactly one valid JSON object per turn, with no Markdown fences or prose outside JSON. Allowed actions: "
+        "write_file {path, content}, read_file {path}, list_files {}, git_status {}, or done {summary}. "
+        "For file tasks, return write_file with a relative path and the complete text content. Do not claim completion until a later turn after the action result confirms it. "
+        "If a tool result is supplied, continue with another JSON action or return done with one concise Roman Urdu/English summary. "
+        "Never emit pseudo-tool markup, XML function tags, raw hidden tokens, shell commands, Git pushes, or secrets."
     )
     history = [{"role": "user", "content": f"Goal: {goal}"}]
     final_summary = ""
@@ -1028,8 +1029,8 @@ async def agent_loop(goal, message, voice_emotion=None):
         for step in range(max_steps):
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(history[-18:])
-            result, request_error = await request_chat_completion(messages, 2500, tools=AGENT_TOOL_SCHEMAS)
-            if not result:
+            response_text, request_error = await request_chat_completion(messages, 3000)
+            if not response_text:
                 if request_error == "rate_limit":
                     final_summary = "Free AI model par rate limit aa gayi. Thodi dair baad `/agent` dobara try karo."
                 elif request_error == "auth":
@@ -1038,43 +1039,34 @@ async def agent_loop(goal, message, voice_emotion=None):
                     final_summary = "Free AI service abhi unavailable hai; agent task complete nahi ho saka."
                 break
 
-            response_text = result.get("content") or ""
-            tool_calls = result.get("tool_calls") or []
-            if tool_calls:
-                history.append({"role": "assistant", "content": response_text, "tool_calls": tool_calls})
-                for call_index, tool_call in enumerate(tool_calls):
-                    function = tool_call.get("function") or {}
-                    name = function.get("name", "")
-                    raw_arguments = function.get("arguments", {})
-                    try:
-                        arguments = raw_arguments if isinstance(raw_arguments, dict) else json.loads(raw_arguments or "{}")
-                        if not isinstance(arguments, dict):
-                            raise ValueError("Arguments must be an object.")
-                        observation, tool_ok = execute_agent_tool(name, arguments)
-                    except Exception as error:
-                        observation, tool_ok = f"Invalid tool arguments ({type(error).__name__}).", False
-                    if name == "write_file" and tool_ok:
-                        file_written = True
-                        written_paths.append(arguments.get("path", ""))
-                    history.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.get("id") or f"agent_{step}_{call_index}",
-                        "name": name,
-                        "content": observation[:3500],
-                    })
-                continue
-
-            if re.search(r"<\s*(?:dots_function_call|function_call|tool_call)\b", response_text, re.IGNORECASE):
-                final_summary = "Free model ne invalid internal tool format diya, isliye us raw text ko hide kar diya. Koi file creation confirm nahi hui; thodi dair baad dobara try karo."
+            action = parse_agent_action(response_text)
+            if not action:
+                if re.search(r"dots_function_call|function_call|tool_call", response_text, re.IGNORECASE):
+                    final_summary = "Free model ne unsupported internal action text diya, isliye use hide kar diya. Koi file change confirm nahi hui; dobara try karo."
+                    break
+                if goal_requires_file:
+                    history.append({"role": "assistant", "content": response_text[:5000]})
+                    history.append({"role": "user", "content": "Pichla jawab valid JSON action nahi tha. Ab sirf ek valid JSON object return karo: {\"action\":\"write_file\",\"path\":\"relative-file-path\",\"content\":\"complete file text\"}. Escape newlines and quotes correctly; no Markdown."})
+                    continue
+                final_summary = clean_agent_output_for_user(response_text)
                 break
 
-            if goal_requires_file and not file_written:
-                history.append({"role": "assistant", "content": response_text})
-                history.append({"role": "user", "content": "Abhi tak write_file tool se file save nahi hui. Agar goal file banana hai to provided write_file tool call karo. Jab tak tool success na de, completion claim mat karo."})
-                continue
+            action_name = action["action"]
+            if action_name == "done":
+                if goal_requires_file and not file_written:
+                    history.append({"role": "assistant", "content": response_text[:5000]})
+                    history.append({"role": "user", "content": "File goal abhi complete nahi hui kyunki write_file action success nahi hua. Pehle valid write_file JSON action bhejo; completion claim mat karo."})
+                    continue
+                final_summary = str(action.get("summary") or "Task complete.")
+                break
 
-            final_summary = clean_agent_output_for_user(response_text)
-            break
+            arguments = {key: value for key, value in action.items() if key not in {"action", "summary"}}
+            observation, tool_ok = execute_agent_tool(action_name, arguments)
+            if action_name == "write_file" and tool_ok:
+                file_written = True
+                written_paths.append(arguments.get("path", ""))
+            history.append({"role": "assistant", "content": response_text[:5000]})
+            history.append({"role": "user", "content": f"Action result: {observation[:3500]}\nContinue using one valid JSON action, or return done with a concise summary."})
 
         if not final_summary:
             if goal_requires_file and not file_written:
