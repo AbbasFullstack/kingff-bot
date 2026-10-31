@@ -133,22 +133,35 @@ def split_telegram_text(text, limit=2800):
     return chunks or [text[:limit]]
 
 
-async def request_chat_completion(messages, max_tokens):
-    """Try the configured models with bounded 429 backoff and no prompt logging."""
+async def request_chat_completion(messages, max_tokens, tools=None):
+    """Try configured (free) models with bounded retry and optional structured tools."""
     saw_rate_limit = False
     for model in MODELS:
         for attempt in range(2):
             try:
+                request_body = {"model": model, "messages": messages, "max_tokens": max_tokens}
+                if tools:
+                    request_body["tools"] = tools
+                    request_body["tool_choice"] = "auto"
                 response = await http_client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {AI_KEY}", "Content-Type": "application/json"},
-                    json={"model": model, "messages": messages, "max_tokens": max_tokens},
+                    json=request_body,
                 )
                 if response.status_code == 200:
                     payload = response.json()
                     choices = payload.get("choices") or []
-                    content = choices[0].get("message", {}).get("content") if choices else None
-                    if isinstance(content, str) and content.strip():
+                    message = choices[0].get("message", {}) if choices else {}
+                    content = message.get("content")
+                    tool_calls = message.get("tool_calls") or []
+                    if tools is not None:
+                        if tool_calls:
+                            return {"content": content if isinstance(content, str) else "", "tool_calls": tool_calls}, None
+                        if isinstance(content, str) and re.search(r"<\s*(?:dots_function_call|function_call|tool_call)\b", content, re.IGNORECASE):
+                            break
+                        if isinstance(content, str) and content.strip():
+                            return {"content": content, "tool_calls": []}, None
+                    elif isinstance(content, str) and content.strip():
                         return content, None
                     break
                 if response.status_code == 429:
@@ -285,11 +298,14 @@ def format_designed_response(text, query=""):
 def clean_agent_output_for_user(text):
     if not text:
         return ""
+    text = re.sub(r"(?is)</?\s*(?:dots_function_call|dots_function_result|function_call|function_result|tool_call|tool_result|tool)\b[^>]*>", "", text)
+    text = re.sub(r"(?im)^.*(?:dots_function_call|function_call|tool_call).*$\n?", "", text)
     text = re.sub(r'<tool\s+\w+>.*?</tool>', '', text, flags=re.DOTALL)
     text = re.sub(r'<tool.*?</tool>', '', text, flags=re.DOTALL)
     text = re.sub(r'\{\s*"cmd"\s*:\s*".*?"\s*\}', '', text, flags=re.DOTALL)
     text = re.sub(r'<thinking>\s*Step \d+.*?Thinking:\s*', '', text, flags=re.DOTALL)
     text = re.sub(r'</thinking>', '', text)
+    text = re.sub(r"(?im)^\s*Part\s+\d+\s*/\s*\d+\s*$\n?", "", text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
@@ -871,6 +887,87 @@ async def agent_command(update, context):
     await agent_loop(goal, update.message)
 
 
+AGENT_TOOL_SCHEMAS = [
+    {"type": "function", "function": {"name": "write_file", "description": "Create or update a text file inside the bot project folder. Use a relative path.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "read_file", "description": "Read a text file inside the bot project folder, excluding secrets.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "list_files", "description": "List ordinary project files while skipping caches, dependencies, and secrets.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "git_status", "description": "Read the current Git working-tree status. This does not change files.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
+]
+
+
+async def animate_agent_thinking(message_obj, stop_event):
+    frames = ["🤔 Thinking", "🤔 Thinking.", "🤔 Thinking..", "🤔 Thinking..."]
+    index = 0
+    while not stop_event.is_set():
+        try:
+            await message_obj.edit_text(frames[index])
+        except Exception:
+            pass
+        index = (index + 1) % len(frames)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass
+
+
+def resolve_agent_path(relative_path):
+    if not isinstance(relative_path, str) or not relative_path.strip() or os.path.isabs(relative_path):
+        raise ValueError("Use a non-empty relative project path.")
+    normalized = relative_path.replace("\\", "/")
+    parts = normalized.split("/")
+    blocked_parts = {".git", ".cache", "node_modules", ".venv", "__pycache__", ".ssh"}
+    if any(part in blocked_parts or part.lower().startswith(".env") or "secret" in part.lower() for part in parts):
+        raise ValueError("That path is restricted.")
+    if any(part.lower().endswith((".pem", ".key")) for part in parts):
+        raise ValueError("That path is restricted.")
+    root = os.path.realpath(os.getcwd())
+    target = os.path.realpath(os.path.join(root, normalized))
+    if os.path.commonpath([root, target]) != root or target == root:
+        raise ValueError("Path must stay inside the project folder.")
+    return root, target, os.path.relpath(target, root)
+
+
+def execute_agent_tool(name, arguments):
+    try:
+        if name == "write_file":
+            root, target, relative = resolve_agent_path(arguments.get("path"))
+            content = arguments.get("content")
+            if not isinstance(content, str):
+                raise ValueError("File content must be text.")
+            if len(content) > 150000:
+                raise ValueError("File is too large; limit is 150 KB of text.")
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "w", encoding="utf-8") as output_file:
+                output_file.write(content)
+            return f"File saved: {relative} ({len(content)} characters).", True
+        if name == "read_file":
+            _, target, relative = resolve_agent_path(arguments.get("path"))
+            with open(target, "r", encoding="utf-8") as input_file:
+                content = input_file.read(5000)
+            return f"File: {relative}\n{content}", True
+        if name == "list_files":
+            root = os.path.realpath(os.getcwd())
+            found = []
+            ignored = {".git", ".cache", "node_modules", ".venv", "__pycache__", ".ssh"}
+            for current, directories, filenames in os.walk(root):
+                directories[:] = [d for d in directories if d not in ignored and not d.lower().startswith(".env")]
+                for filename in filenames:
+                    if filename.lower().startswith(".env") or "secret" in filename.lower() or filename.lower().endswith((".pem", ".key")):
+                        continue
+                    found.append(os.path.relpath(os.path.join(current, filename), root))
+                    if len(found) >= 80:
+                        break
+                if len(found) >= 80:
+                    break
+            return "Project files:\n" + ("\n".join(found) if found else "No ordinary files found."), True
+        if name == "git_status":
+            output, code = run_shell_command("git status --short", timeout=10)
+            return f"Git status (exit {code}):\n{output[:2500]}", True
+        return f"Unsupported tool: {name}", False
+    except Exception as error:
+        return f"Tool failed ({type(error).__name__}): {str(error)[:240]}", False
+
+
 async def handle_text(u, c):
     text = u.message.text.strip()
     if not text or len(text) < 2:
@@ -911,118 +1008,104 @@ async def agent_loop(goal, message, voice_emotion=None):
     if not is_owner(message.from_user.id):
         await message.reply_text("Agent owner only!")
         return
-    thinking_msg = await message.reply_text("🤖 Agent task samajh kar kaam shuru kar raha hai…")
-    tools_desc = "Tools: write_file(path, content), read_file(path), list_files(), git_status(), git_push(message), terminal(command)"
-    system_prompt = f"You are Abbas AI Agent Day 10. Goal: {goal}\n{tools_desc}\nRules: Think step by step, use tools, max 8 steps, final summary clean no tool JSON leaks. If security update, check .gitignore for .env"
-    history = [{"role": "user", "content": f"Goal: {goal}. Start."}]
-    final_summary = ""
-    max_steps = 8
-    for step in range(max_steps):
-        try:
-            await thinking_msg.edit_text(f"🤖 Agent step {step+1} par kaam kar raha hai…")
-        except:
-            pass
-        try:
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(history[-6:])
-            response, request_error = await request_chat_completion(messages, 1000)
-            if not response:
-                response = (
-                    "AI provider par rate limit hai. Thodi dair baad agent task dobara chalao."
-                    if request_error == "rate_limit"
-                    else "AI service unavailable hai; agent task complete nahi ho saka."
-                )
-        except Exception as e:
-            await thinking_msg.edit_text(f"Agent error: {type(e).__name__}. Try again shortly.")
-            return
-        tool_used = False
-        observation = ""
-        try:
-            if "write_file" in response.lower():
-                m = re.search(r'write_file.*?path.*?["\'](.*?)["\']', response, re.DOTALL)
-                if m:
-                    path = m.group(1)
-                    # Try to extract content
-                    cm = re.search(r'content.*?["\'](.*?)["\']', response, re.DOTALL)
-                    content = cm.group(1) if cm else "Test content"
-                    try:
-                        with open(path, 'w', encoding='utf-8') as f:
-                            f.write(content)
-                        observation = f"Wrote {path} ({len(content)} chars)"
-                    except Exception as e:
-                        observation = f"Write error: {e}"
-                    tool_used = True
-            elif "read_file" in response.lower():
-                m = re.search(r'read_file.*?path.*?["\'](.*?)["\']', response)
-                if m:
-                    path = m.group(1)
-                    try:
-                        with open(path, 'r', encoding='utf-8') as f:
-                            cont = f.read()[:3000]
-                        observation = f"Read {path}: {cont[:2000]}"
-                    except Exception as e:
-                        observation = f"Read error: {e}"
-                    tool_used = True
-            elif "list_files" in response.lower():
-                try:
-                    files = os.listdir('.')
-                    observation = f"Files: {', '.join(files[:20])}"
-                except Exception as e:
-                    observation = f"List error: {e}"
-                tool_used = True
-            elif "terminal" in response.lower():
-                m = re.search(r'(?:terminal|shell).*?["\'](.*?)["\']', response)
-                if m:
-                    cmd = m.group(1)
-                    out, code = run_shell_command(cmd, timeout=15)
-                    observation = f"Terminal {cmd} -> Exit {code}: {out[:1500]}"
-                    tool_used = True
-            elif "git_status" in response.lower():
-                out, code = run_shell_command("git status --short", timeout=10)
-                observation = f"Git status: {out[:1500]}"
-                tool_used = True
-            elif "git_push" in response.lower():
-                m = re.search(r'git_push.*?["\'](.*?)["\']', response)
-                msg = m.group(1) if m else f"Agent: {goal}"
-                out, code = run_shell_command(f'git add . && git commit -m "{msg}" && git push', timeout=20)
-                observation = f"Git push: {out[:1500]}"
-                tool_used = True
-        except Exception as e:
-            observation = f"Tool parse error: {e}"
-        if tool_used:
-            history.append({"role": "assistant", "content": response})
-            history.append({"role": "user", "content": f"Tool result: {observation}\nContinue or finish."})
-            # Keep only the recent context so long agent runs use bounded memory.
-            history = history[-6:]
-        else:
-            final_summary = clean_agent_output_for_user(response)
-            break
-        await asyncio.sleep(0.5)
-    if not final_summary:
-        final_summary = f"Agent ne {step+1} steps complete kiye."
-    final_summary = clean_agent_output_for_user(final_summary)
-    final_summary = final_summary.replace('<tool', '').replace('</tool>', '').replace('{"cmd"', '')
-    designed_final = format_designed_response(final_summary, goal)
-    await send_typing_animation(
-        thinking_msg,
-        f"🎉 **Agent Mission Complete!**\n\n{designed_final[:3000]}",
+    thinking_msg = await message.reply_text("🤔 Thinking")
+    stop_animation = asyncio.Event()
+    animation_task = asyncio.create_task(animate_agent_thinking(thinking_msg, stop_animation))
+    system_prompt = (
+        "You are Abbas AI, a careful coding agent. Complete the user's goal using only the structured tools provided. "
+        "For file tasks, call write_file with a relative project path and full file content; do not claim a file exists until the tool confirms it. "
+        "Use read_file, list_files, or git_status only when useful. Never emit pseudo-tool markup, XML function tags, or raw tool JSON as user-facing text. "
+        "Do not use shell commands, push commits, access secrets, or perform unrelated actions. "
+        "After tools finish, return one concise Roman Urdu/English summary and mention any created relative file path."
     )
-    if HAS_TTS and final_summary:
-        try:
-            if HAS_EDGE_TTS or HAS_ELEVENLABS:
-                vf = await text_to_voice_edge(final_summary, "voice_agent_day10.mp3", emotion=voice_emotion)
+    history = [{"role": "user", "content": f"Goal: {goal}"}]
+    final_summary = ""
+    file_written = False
+    written_paths = []
+    goal_requires_file = bool(re.search(r"\b(?:file|html|website|landing\s+page|create|build|bana|likh|save)\b", goal, re.IGNORECASE))
+    max_steps = 8
+    try:
+        for step in range(max_steps):
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(history[-18:])
+            result, request_error = await request_chat_completion(messages, 2500, tools=AGENT_TOOL_SCHEMAS)
+            if not result:
+                if request_error == "rate_limit":
+                    final_summary = "Free AI model par rate limit aa gayi. Thodi dair baad `/agent` dobara try karo."
+                elif request_error == "auth":
+                    final_summary = "AI provider key authorized nahi hui; hosting environment check karna hoga."
+                else:
+                    final_summary = "Free AI service abhi unavailable hai; agent task complete nahi ho saka."
+                break
+
+            response_text = result.get("content") or ""
+            tool_calls = result.get("tool_calls") or []
+            if tool_calls:
+                history.append({"role": "assistant", "content": response_text, "tool_calls": tool_calls})
+                for call_index, tool_call in enumerate(tool_calls):
+                    function = tool_call.get("function") or {}
+                    name = function.get("name", "")
+                    raw_arguments = function.get("arguments", {})
+                    try:
+                        arguments = raw_arguments if isinstance(raw_arguments, dict) else json.loads(raw_arguments or "{}")
+                        if not isinstance(arguments, dict):
+                            raise ValueError("Arguments must be an object.")
+                        observation, tool_ok = execute_agent_tool(name, arguments)
+                    except Exception as error:
+                        observation, tool_ok = f"Invalid tool arguments ({type(error).__name__}).", False
+                    if name == "write_file" and tool_ok:
+                        file_written = True
+                        written_paths.append(arguments.get("path", ""))
+                    history.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.get("id") or f"agent_{step}_{call_index}",
+                        "name": name,
+                        "content": observation[:3500],
+                    })
+                continue
+
+            if re.search(r"<\s*(?:dots_function_call|function_call|tool_call)\b", response_text, re.IGNORECASE):
+                final_summary = "Free model ne invalid internal tool format diya, isliye us raw text ko hide kar diya. Koi file creation confirm nahi hui; thodi dair baad dobara try karo."
+                break
+
+            if goal_requires_file and not file_written:
+                history.append({"role": "assistant", "content": response_text})
+                history.append({"role": "user", "content": "Abhi tak write_file tool se file save nahi hui. Agar goal file banana hai to provided write_file tool call karo. Jab tak tool success na de, completion claim mat karo."})
+                continue
+
+            final_summary = clean_agent_output_for_user(response_text)
+            break
+
+        if not final_summary:
+            if goal_requires_file and not file_written:
+                final_summary = "File create nahi hui: free model ne valid write_file call complete nahi ki. Koi change confirm nahi kiya. Dobara try karo."
+            elif file_written:
+                final_summary = "File save ho gayi, lekin free agent 8-step limit mein final summary nahi de saka."
+                if written_paths:
+                    final_summary += " Path: " + ", ".join(p for p in written_paths if p)
             else:
-                vf = text_to_voice_sync(final_summary, "voice_agent_day10.mp3")
-            if vf and os.path.exists(vf):
-                caption_emotion = voice_emotion.title() if voice_emotion else detect_emotion_for_log(final_summary)
-                with open(vf, "rb") as voice_file:
-                    await message.reply_voice(voice_file, caption=f"Voice reply · {caption_emotion}")
-                try:
-                    os.remove(vf)
-                except:
-                    pass
-        except Exception as e:
-            print(f"Agent voice error: {e}")
+                final_summary = "Free agent 8-step limit tak pohanch gaya; task completion confirm nahi hui."
+    except Exception as error:
+        final_summary = f"Agent error ({type(error).__name__}); task completion confirm nahi hui."
+    finally:
+        stop_animation.set()
+        animation_task.cancel()
+        await asyncio.gather(animation_task, return_exceptions=True)
+
+    final_summary = clean_agent_output_for_user(final_summary) or "Task complete nahi ho saka; dobara try karo."
+    final_text = ("✅ Agent result\n\n" + final_summary) if file_written else final_summary
+    final_text = format_designed_response(final_text, goal)
+    body = markdown_to_telegram_html(final_text)
+    if len(body) > 3900:
+        final_text = final_text[:2200].rstrip() + "\n\n…reply ko ek Telegram message mein fit karne ke liye short kiya."
+        body = markdown_to_telegram_html(final_text)
+    try:
+        await thinking_msg.edit_text(body, parse_mode="HTML", disable_web_page_preview=True)
+    except Exception:
+        try:
+            await thinking_msg.edit_text(markdown_to_plain(final_text)[:3800], disable_web_page_preview=True)
+        except Exception as error:
+            print(f"Agent final delivery failed ({type(error).__name__})")
 
 async def main():
     Thread(target=run_flask, daemon=True).start()
