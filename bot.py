@@ -1,4 +1,4 @@
-import os, sys, asyncio, subprocess, json, time, traceback, random, re, html
+import os, sys, asyncio, subprocess, json, time, traceback, random, re, html, shlex
 from datetime import datetime
 from flask import Flask
 from threading import Thread
@@ -907,7 +907,7 @@ def parse_agent_action(text):
             payload = normalized
         elif action is None and isinstance(payload.get("type"), str):
             action = payload.get("type")
-        if isinstance(action, str) and action.strip().lower() in {"write_file", "read_file", "list_files", "git_status", "done"}:
+        if isinstance(action, str) and action.strip().lower() in {"write_file", "read_file", "list_files", "git_status", "run_command", "done"}:
             payload["action"] = action.strip().lower()
             return payload
     return None
@@ -945,7 +945,7 @@ def resolve_agent_path(relative_path):
     return root, target, os.path.relpath(target, root)
 
 
-def execute_agent_tool(name, arguments):
+def execute_agent_tool(name, arguments, refuse_overwrite=False):
     try:
         if name == "write_file":
             root, target, relative = resolve_agent_path(arguments.get("path"))
@@ -954,8 +954,10 @@ def execute_agent_tool(name, arguments):
                 raise ValueError("File content must be text.")
             if len(content) > 150000:
                 raise ValueError("File is too large; limit is 150 KB of text.")
+            if refuse_overwrite and os.path.exists(target):
+                raise ValueError("Auto-created files cannot overwrite an existing path; choose a new filename.")
             os.makedirs(os.path.dirname(target), exist_ok=True)
-            with open(target, "w", encoding="utf-8") as output_file:
+            with open(target, "x" if refuse_overwrite else "w", encoding="utf-8") as output_file:
                 output_file.write(content)
             return f"File saved: {relative} ({len(content)} characters).", True
         if name == "read_file":
@@ -981,14 +983,75 @@ def execute_agent_tool(name, arguments):
         if name == "git_status":
             output, code = run_shell_command("git status --short", timeout=10)
             return f"Git status (exit {code}):\n{output[:2500]}", True
+        if name == "run_command":
+            command = arguments.get("command")
+            if not isinstance(command, str) or not command.strip() or len(command) > 300:
+                raise ValueError("Provide one short allowlisted command.")
+            if any(char in command for char in ";&|$><`\n\r"):
+                raise ValueError("Shell operators and command chaining are not allowed.")
+            tokens = shlex.split(command)
+            root = os.path.realpath(os.getcwd())
+            if tokens in (["python3", "--version"], ["python", "--version"], ["node", "--version"], ["npm", "--version"], ["git", "diff", "--check"]):
+                argv = tokens
+            elif len(tokens) == 4 and tokens[:3] in (["python3", "-m", "py_compile"], ["python", "-m", "py_compile"]):
+                _, target, relative = resolve_agent_path(tokens[3])
+                if not relative.lower().endswith(".py") or not os.path.isfile(target):
+                    raise ValueError("Python syntax checks require an existing project .py file.")
+                argv = [sys.executable, "-m", "py_compile", target]
+            elif len(tokens) == 3 and tokens[:2] == ["node", "--check"]:
+                _, target, relative = resolve_agent_path(tokens[2])
+                if not relative.lower().endswith((".js", ".mjs", ".cjs")) or not os.path.isfile(target):
+                    raise ValueError("Node syntax checks require an existing project JavaScript file.")
+                argv = ["node", "--check", target]
+            else:
+                raise ValueError("Allowed commands: python3/python --version, node/npm --version, git diff --check, python3/python -m py_compile <existing.py>, node --check <existing.js>.")
+            result = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=10, shell=False)
+            output = (result.stdout + result.stderr).strip() or ("Command passed." if result.returncode == 0 else "Command failed.")
+            return f"Command exit {result.returncode}:\n{output[:1800]}", result.returncode == 0
         return f"Unsupported tool: {name}", False
     except Exception as error:
         return f"Tool failed ({type(error).__name__}): {str(error)[:240]}", False
 
 
+def should_auto_route_to_agent(text):
+    text = (text or "").strip()
+    if not text or len(text) > 12000:
+        return False
+    lower = text.lower()
+    if re.match(r"^(?:how\b|what\b|why\b|when\b|where\b|explain\b|teach\s+me\b|show\s+me\s+how\b)", lower):
+        return False
+    if re.search(r"\b(?:how\s+to|how\s+do\s+i|explain\s+how|teach\s+me\s+to|ideas?\s+for|tips?\s+for)\b", lower):
+        return False
+    artifact = r"\b(?:cv|c\.v\.|resume|resumé|portfolio|website|web\s*site|webpage|web\s+page|landing\s+page|web\s+app|mobile\s+app|application|script|program|project|bot|code)\b"
+    if not re.search(artifact, lower):
+        return False
+    creation = r"(?:make|build|create|develop|design|generate|write|draft|code|prepare|set\s+up)"
+    cleaned = re.sub(r"^(?:(?:please|bro|bhai|yaar)[\s,]+)+", "", lower)
+    if re.match(rf"^{creation}\b", cleaned):
+        return True
+    if re.search(rf"\b(?:can|could|would)\s+you\b.{{0,100}}\b{creation}\b", lower):
+        return True
+    if re.search(rf"\b(?:i need|i want|i'd like|i would like)\b.{{0,60}}\b{creation}\b.{{0,80}}{artifact}", lower):
+        return True
+    roman_urdu_action = r"(?:bana\w*|tayyar\s+kar\w*|design\s+kar\w*|likh\w*|create\s+kar\w*|develop\s+kar\w*)"
+    if re.search(rf"{artifact}.{{0,100}}\b{roman_urdu_action}\b|\b(?:mujhe|mere\s+liye)\b.{{0,120}}\b{roman_urdu_action}\b.{{0,80}}{artifact}", lower):
+        return True
+    if re.search(r"\b(?:advice|tips?|feedback|review|ideas?|suggestions?|how\s+to|what\s+to\s+include)\b", lower):
+        return False
+    if re.search(r"\b(?:i need|i want|i'd like|i would like)\s+(?:(?:a|an|my|professional)\s+)*(?:cv|c\.v\.|resume|resumé|portfolio|website|web\s*site|webpage|web\s+page|landing\s+page|web\s+app|mobile\s+app|application|script|program|project|bot|code)\b", lower):
+        return True
+    if re.search(rf"\b(?:mujhe|mere\s+liye)\b.{{0,100}}{artifact}.{{0,40}}\bchahiye\b", lower):
+        return True
+    return False
+
+
 async def handle_text(u, c):
     text = u.message.text.strip()
     if not text or len(text) < 2:
+        return
+    user = getattr(u, "effective_user", None) or getattr(u.message, "from_user", None)
+    if user and is_owner(user.id) and should_auto_route_to_agent(text):
+        await agent_loop(text, u.message, auto_mode=True)
         return
     thinking = await u.message.reply_text("🤔 Jawab tayyar kar raha hun…")
     ans = await call_ai(text, is_voice=False)
@@ -1039,11 +1102,14 @@ def agent_goal_requires_file(goal):
     if agent_goal_forbids_file_changes(goal):
         return False
     verbs = r"(?:create|make|write|save|generate|build|bana\w*|likh\w*)"
-    targets = r"(?:file|files|html|website|landing\s+page)"
-    return bool(re.search(rf"\b{verbs}\b.{{0,100}}\b{targets}\b|\b{targets}\b.{{0,100}}\b{verbs}\b", goal or "", re.IGNORECASE))
+    targets = r"(?:file|files|html|website|web\s+page|landing\s+page|cv|c\.v\.|resume|resumé|portfolio|script|program|application|web\s+app|mobile\s+app)"
+    text = goal or ""
+    if re.search(rf"\b{verbs}\b.{{0,100}}\b{targets}\b|\b{targets}\b.{{0,100}}\b{verbs}\b", text, re.IGNORECASE):
+        return True
+    return bool(re.search(r"\b(?:i need|i want|i'd like|i would like)\s+(?:(?:a|an|my|professional)\s+)*(?:cv|c\.v\.|resume|resumé|portfolio|website|web\s+page|landing\s+page)\b|\b(?:mujhe|mere\s+liye)\b.{0,100}\b(?:cv|resume|resumé|portfolio|website|web\s+page|landing\s+page)\b.{0,40}\bchahiye\b", text, re.IGNORECASE))
 
 
-async def agent_loop(goal, message, voice_emotion=None):
+async def agent_loop(goal, message, voice_emotion=None, auto_mode=False):
     if not is_owner(message.from_user.id):
         await message.reply_text("Agent owner only!")
         return
@@ -1053,12 +1119,15 @@ async def agent_loop(goal, message, voice_emotion=None):
     system_prompt = (
         "You are Abbas AI, a careful coding agent. The provider may not support API function calling, so use this plain-text JSON action protocol. "
         "Return exactly one valid JSON object per turn, with no Markdown fences or prose outside JSON. Allowed actions: "
-        "write_file {path, content}, read_file {path}, list_files {}, git_status {}, or done {summary}. "
-        "For file tasks, return write_file with a relative path and the complete text content. Do not claim completion until a later turn after the action result confirms it. "
+        "write_file {path, content}, read_file {path}, list_files {}, git_status {}, run_command {command}, or done {summary}. "
+        "For file tasks, return write_file with a relative path and the complete text content. For CV/resume/portfolio work, use clearly marked placeholders when personal details are missing and never invent personal facts. Do not claim completion until a later turn after the action result confirms it. "
         "Respect negative constraints in the goal: if the user says not to create or change files, never call write_file and return a concise done summary. "
+        "run_command is a restricted validation tool only: use only the exact allowlisted version checks, git diff --check, Python py_compile, or Node --check forms. Never invent or run arbitrary shell commands, installs, deletion, deployment, or Git push commands. "
         "If a tool result is supplied, continue with another JSON action or return done with one concise Roman Urdu/English summary. "
         "Never emit pseudo-tool markup, XML function tags, raw hidden tokens, shell commands, Git pushes, or secrets."
     )
+    if auto_mode:
+        system_prompt += " This request came from normal chat and was routed because the user clearly asked to create a coding artifact. Use a new descriptive relative filename and never overwrite an existing file; if the preferred path exists, choose a different filename."
     history = [{"role": "user", "content": f"Goal: {goal}"}]
     final_summary = ""
     file_written = False
@@ -1108,7 +1177,7 @@ async def agent_loop(goal, message, voice_emotion=None):
                 break
 
             arguments = {key: value for key, value in action.items() if key not in {"action", "summary"}}
-            observation, tool_ok = execute_agent_tool(action_name, arguments)
+            observation, tool_ok = execute_agent_tool(action_name, arguments, refuse_overwrite=auto_mode)
             if action_name == "write_file" and tool_ok:
                 file_written = True
                 written_paths.append(arguments.get("path", ""))
