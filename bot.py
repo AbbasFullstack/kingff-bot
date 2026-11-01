@@ -889,6 +889,24 @@ def parse_agent_action(text):
         if not isinstance(payload, dict):
             continue
         action = payload.get("action")
+        if isinstance(action, dict):
+            nested = action
+            action = nested.get("type") or nested.get("name") or nested.get("action")
+            if isinstance(action, str) and action in {"function_call", "tool_call"}:
+                action = nested.get("name") or nested.get("action")
+            arguments = nested.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except (json.JSONDecodeError, ValueError):
+                    arguments = None
+            normalized = {key: value for key, value in payload.items() if key != "action"}
+            if isinstance(arguments, dict):
+                normalized.update(arguments)
+            normalized.update({key: value for key, value in nested.items() if key not in {"type", "name", "action", "arguments"}})
+            payload = normalized
+        elif action is None and isinstance(payload.get("type"), str):
+            action = payload.get("type")
         if isinstance(action, str) and action.strip().lower() in {"write_file", "read_file", "list_files", "git_status", "done"}:
             payload["action"] = action.strip().lower()
             return payload
@@ -1043,6 +1061,9 @@ async def agent_loop(goal, message, voice_emotion=None):
             if not action:
                 if re.search(r"dots_function_call|function_call|tool_call", response_text, re.IGNORECASE):
                     final_summary = "Free model ne unsupported internal action text diya, isliye use hide kar diya. Koi file change confirm nahi hui; dobara try karo."
+                    break
+                if re.search(r'"(?:action|type|arguments)"\s*:', response_text, re.IGNORECASE):
+                    final_summary = "Free model ne unsupported action JSON diya, isliye raw text hide kar diya. Koi project change confirm nahi hui; dobara try karo."
                     break
                 if goal_requires_file:
                     history.append({"role": "assistant", "content": response_text[:5000]})
