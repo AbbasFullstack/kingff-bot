@@ -1022,6 +1022,27 @@ async def handle_voice(u, c):
     except Exception as e:
         await u.message.reply_text(f"Voice error: {e}")
 
+
+def agent_goal_forbids_file_changes(goal):
+    text = (goal or "").lower()
+    negative_patterns = (
+        r"\b(?:don't|do not|dont|never)\b.{0,40}\b(?:create|make|write|save|modify|change|edit|delete|remove|touch)\b(?:\s+(?:or|and)\s+(?:create|make|write|save|modify|change|edit|delete|remove|touch)\b)?\s+(?:(?:any|a|the|this|your|new)\s+)?files?\b",
+        r"\bno\s+(?:file|files)\s+(?:changes?|modifications?|writes?|creations?)\b",
+        r"\bwithout\s+(?:creating|writing|saving|modifying|changing|editing|deleting)\s+(?:any\s+)?files?\b",
+        r"\b(?:koi|koee)\s+(?:bhi\s+)?files?\b.{0,80}\b(?:create|make|write|save|modify|change|edit|delete|remove|touch|bana\w*|likh\w*)\b.{0,30}\b(?:mat|na)\b",
+        r"\bfiles?\b.{0,30}\b(?:mat|na)\s*(?:create|make|write|save|modify|change|edit|delete|remove|touch|bana\w*|likh\w*)\b",
+    )
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in negative_patterns)
+
+
+def agent_goal_requires_file(goal):
+    if agent_goal_forbids_file_changes(goal):
+        return False
+    verbs = r"(?:create|make|write|save|generate|build|bana\w*|likh\w*)"
+    targets = r"(?:file|files|html|website|landing\s+page)"
+    return bool(re.search(rf"\b{verbs}\b.{{0,100}}\b{targets}\b|\b{targets}\b.{{0,100}}\b{verbs}\b", goal or "", re.IGNORECASE))
+
+
 async def agent_loop(goal, message, voice_emotion=None):
     if not is_owner(message.from_user.id):
         await message.reply_text("Agent owner only!")
@@ -1034,6 +1055,7 @@ async def agent_loop(goal, message, voice_emotion=None):
         "Return exactly one valid JSON object per turn, with no Markdown fences or prose outside JSON. Allowed actions: "
         "write_file {path, content}, read_file {path}, list_files {}, git_status {}, or done {summary}. "
         "For file tasks, return write_file with a relative path and the complete text content. Do not claim completion until a later turn after the action result confirms it. "
+        "Respect negative constraints in the goal: if the user says not to create or change files, never call write_file and return a concise done summary. "
         "If a tool result is supplied, continue with another JSON action or return done with one concise Roman Urdu/English summary. "
         "Never emit pseudo-tool markup, XML function tags, raw hidden tokens, shell commands, Git pushes, or secrets."
     )
@@ -1041,7 +1063,8 @@ async def agent_loop(goal, message, voice_emotion=None):
     final_summary = ""
     file_written = False
     written_paths = []
-    goal_requires_file = bool(re.search(r"\b(?:file|html|website|landing\s+page|create|build|bana|likh|save)\b", goal, re.IGNORECASE))
+    no_file_changes = agent_goal_forbids_file_changes(goal)
+    goal_requires_file = agent_goal_requires_file(goal)
     max_steps = 8
     try:
         for step in range(max_steps):
@@ -1073,6 +1096,9 @@ async def agent_loop(goal, message, voice_emotion=None):
                 break
 
             action_name = action["action"]
+            if action_name == "write_file" and no_file_changes:
+                final_summary = "Aap ne file changes mana ki thi, isliye write_file block kiya. Koi file change nahi ki."
+                break
             if action_name == "done":
                 if goal_requires_file and not file_written:
                     history.append({"role": "assistant", "content": response_text[:5000]})
